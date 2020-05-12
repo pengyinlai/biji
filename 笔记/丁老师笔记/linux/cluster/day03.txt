@@ -1,0 +1,388 @@
+
+存储分类:
+	1)DAS直连存储[硬盘]
+	2)NAS网络附加存储[NFS,Samba...] 提供文件系统共享
+	3)SAN存储区域网络[iSCSI...]		提供块共享
+	4)分布式存储
+
+备注:文件系统(ext3,ext4,xfs,ntfs,fat32)
+
+常见的分布式存储：
+Hadoop
+Lustre
+FastDFS
+GlusterFS
+Ceph(提供块、文件系统、对象存储)
+
+Ceph核心组件:
+MON监控组件(ceph-mon)监控和绘制地图
+OSD存储设备(ceph-osd)提供共享容量
+MDS文件系统(ceph-mds)
+Radowsgateway对象存储(ceph-radosgw)
+
+ceph的存储默认会提供3副本,所以OSD至少3台
+MON有一个过半原则,所以至少3台
+
+ceph提供:高可用、高性能、高可扩展行
+
+	【准备环境】4台虚拟机,1台做客户端,3台做ceph存储集群
+	主机名    IP地址
+	client	  192.168.4.10/24
+	node1	  192.168.4.11/24
+	node2     192.168.4.12/24
+	node3     192.168.4.13/24
+	修改主机名，配置IP地址.
+
+	把四台虚拟机全部关机.
+	每台虚拟机都添加一个光驱.做如下相同操作:
+	右击虚拟机,选【设置】---【添加】---【CD|DVD驱动器】--【完成】
+	点击刚刚新建的光盘[CD|DVD],勾选使用ISO映像文件--[浏览]
+	找到自己真机的ceph10.iso加载即可.
+
+	【重要提醒】添加新的光驱后，新添加的光驱是第一个光驱
+	之前的光驱变成了第二个光驱!!!!
+
+
+	给node1，node2，node3做ceph集群的3台主机添加磁盘
+	每个虚拟机加2个20G的磁盘.
+	右击虚拟机,选【设置】---【添加】---【磁盘】--【下一步】
+	【下一步】---大小【20G】---【下一步】--【完成】
+
+	备注：同样的操作在3台虚拟机上都做2遍。
+
+	启动所有虚拟机后,查看磁盘情况:
+	[root@client ~]# lsblk
+	[root@node1 ~]# lsblk
+	[root@node2 ~]# lsblk
+	[root@node3 ~]# lsblk
+
+
+	【重新挂载光盘，所有4台虚拟机操作】
+	[root@client ~]# umount /dev/sr0
+	[root@client ~]# umount /dev/sr1	#未挂载的话会报错
+	#备注:284M左右的光盘是Ceph光盘,8G的光盘是系统光盘.
+	[root@client ~]# mkdir /ceph
+	[root@client ~]# vim /etc/fstab
+	/dev/sr0    /ceph     iso9660   defaults   0  0
+	/dev/sr1    /media    iso9660   defaults   0  0
+	[root@client ~]# mount -a
+	[root@client ~]# lsblk
+	#确认284M光盘挂载到ceph目录,8G光盘挂载到/media目录.
+
+
+
+
+	[root@node1 ~]# umount /dev/sr0
+	[root@node1 ~]# umount /dev/sr1
+	[root@node1 ~]# mkdir /ceph
+	[root@node1 ~]# vim /etc/fstab
+	/dev/sr0    /ceph     iso9660   defaults   0  0
+	/dev/sr1    /media    iso9660   defaults   0  0
+	[root@node1 ~]# mount -a
+
+
+	[root@node2 ~]# umount /dev/sr0
+	[root@node2 ~]# umount /dev/sr1
+	[root@node2 ~]# mkdir /ceph
+	[root@node2 ~]# vim /etc/fstab
+	/dev/sr0    /ceph     iso9660   defaults   0  0
+	/dev/sr1    /media    iso9660   defaults   0  0
+	[root@node2 ~]# mount -a
+
+
+	[root@node3 ~]# umount /dev/sr0
+	[root@node3 ~]# umount /dev/sr1
+	[root@node3 ~]# mkdir /ceph
+	[root@node3 ~]# vim /etc/fstab
+	/dev/sr0    /ceph     iso9660   defaults   0  0
+	/dev/sr1    /media    iso9660   defaults   0  0
+	[root@node3 ~]# mount -a
+
+
+	【所有主机配置yum源,4台虚拟机做相同操作】
+	[root@client ~]# cd /etc/yum.repos.d/
+	[root@client yum.repos.d]# cat dvd.repo  #原本配置好的系统YUM
+	[centos]
+	name=centos
+	baseurl=file:///media/
+	gpgcheck=0
+	[root@client yum.repos.d]# vim ceph.repo	#新建yum配置
+	[mon]
+	name=mon
+	baseurl=file:///ceph/MON
+	gpgcheck=0
+	[osd]
+	name=osd
+	baseurl=file:///ceph/OSD
+	gpgcheck=0
+	[tools]
+	name=tools
+	baseurl=file:///ceph/Tools
+	gpgcheck=0
+	[root@client yum.repos.d]# yum repolist
+
+	[root@client yum.repos.d]# scp ceph.repo 192.168.4.11:/etc/yum.repos.d/
+	[root@client yum.repos.d]# scp ceph.repo 192.168.4.12:/etc/yum.repos.d/
+	[root@client yum.repos.d]# scp ceph.repo 192.168.4.13:/etc/yum.repos.d/
+
+
+	【ssh密钥，实现无密码连接】
+	#备注:我们需要找一台主机出来,后面的很多早在都是需要重复的
+	#很多操作都需要远程操作,
+	#所以需要找一台主机,让他可用无密码远程所有主机,包括远程自己.
+	#这台主机可用是任意主机(这里假设我们选择的是node1)
+
+	[root@node1 ~]# ssh-keygen
+	[root@node1 ~]# for i in 10 11 12 13
+	 do
+	    ssh-copy-id  192.168.4.$i
+	 done
+	#会提示yes/no，输入yes，会提示输入密码,输入系统密码即可.
+
+
+	【修改主机名解析，仅在node1操作】
+	[root@node1 ~]# vim /etc/hosts
+	#在该文件中手动添加如下内容:
+	192.168.4.10  client
+	192.168.4.11  node1
+	192.168.4.12  node2
+	192.168.4.13  node3
+	#【注意:这里解析的名称必须跟对应电脑的主机名称一致】
+	[root@node1 ~]# for i in client node1 node2 node3
+	 do
+	    scp  /etc/hosts  $i:/etc/
+	 done
+	#备注:
+	#/etc/hostname是主机名,/etc/hosts是本地域名解析
+	#hostname是自己识别的名称,hosts是识别自己和其他主机的解析名称
+
+
+	【配置NTP时间同步：Ceph要求所有主机时间必须一致】
+	使用client做时间服务器，其他所有主机与client同步时间
+	#仅client操作
+	1)配置时间服务器
+	[root@client ~]#  yum -y install chrony
+	[root@client ~]# vim /etc/chrony.conf
+	allow 192.168.4.0/24		#修改26行
+	local stratum 10			#修改29行(去注释即可)
+	[root@client ~]# systemctl restart chronyd
+  [root@client ~]# firewall-cmd --set-default-zone=trusted
+	[root@client ~]# sed -i '/SELINUX/s/enforcing/permissive/' /etc/selinux/config
+  [root@client ~]# setenforce 0
+
+
+
+	2)配置NTP客户端
+	[root@node1 ~]# for i in node1  node2  node3
+	do
+	    ssh  $i  "yum -y install chrony"
+	done
+	[root@node1 ~]# for i in  node1  node2  node3
+	 do
+	    ssh $i  "sed -i '2a server 192.168.4.10 iburst'  /etc/chrony.conf"
+	    ssh $i  "systemctl  restart chronyd"
+	 done
+
+	 [root@node1 ~]# for i in  node1 node2  node3
+ 	 do
+ 	    ssh $i  "firewall-cmd --set-default-zone=trusted"
+ 	    ssh $i  "sed -i '/SELINUX/s/enforcing/permissive/' /etc/selinux/config"
+			ssh $i  "setenforce 0"
+ 	 done
+
+	#备注:任意找一台主机验证
+	[root@node2 ~]# chronyc sources -v
+
+
+【部署Ceph集群】
+	1)安装软件包(仅node1主机操作)
+	[root@node1 ~]# yum -y install ceph-deploy
+	#仅在node1主机安装(这是一个python脚本,可以自动部署ceph)
+
+	[root@node1 ~]# for i in  node1  node2  node3
+	 do
+	    ssh $i  "yum -y install ceph-mon ceph-osd ceph-mds ceph-radosgw"
+	 done
+
+	#任意主机验证:
+	[root@node1 ~]# rpm -qa |grep ceph
+
+
+
+	2)配置ceph-mon服务[仅node1主机操作]
+	[root@node1 ~]# mkdir /root/ceph-cluster
+	[root@node1 ~]# cd /root/ceph-cluster/
+	#创建任意目录,名称任意,位置任意.
+	#但是！！！以后但凡执行ceph-deploy这个脚本,必须先cd到该目录.
+++++++++++++++++++++++++++++++++++
+###   此时推荐:给虚拟机快照   ####
+++++++++++++++++++++++++++++++++++
+
+	[root@node1 ceph-cluster]# ceph-deploy new node1 node2 node3
+	#在当前目录下生成ceph.conf主配置文件,
+	#ceph mon集群由node1,node2,node3组成
+	[root@node1 ceph-cluster]# cat ceph.conf	#输出结果如下:
+	[global]
+	fsid = bf92e6da-2d17-4bfd-ab01-917d3d3690c1
+	mon_initial_members = node1, node2, node3
+	mon_host = 192.168.4.11,192.168.4.12,192.168.4.13
+	auth_cluster_required = cephx
+	auth_service_required = cephx
+	auth_client_required = cephx
+
+	#备注:默认ceph启动服务时会到/etc/ceph/目录去读取配置文件
+	#但是,ceph-deploy把ceph.conf创建到了当前目录
+	#接下来需要把当前目录的配置文件拷贝到/etc/ceph/目录
+	#然后启动ceph-mon服务.
+
+
+	[root@node1 ceph-cluster]# ceph-deploy mon create-initial
+	#脚本自动拷贝配置文件，自动启动所有主机的ceph-mon服务
+
+	[root@node1 ceph-cluster]# ceph -s		#验证
+      cluster bf92e6da-2d17-4bfd-ab01-917d3d3690c1
+     health HEALTH_ERR
+            64 pgs are stuck inactive for more than 300 seconds
+            64 pgs stuck inactive
+            no osds
+     monmap e1: 3 mons at {node1=192.168.4.11:6789/0,node2=192.168.4.12:6789/0,node3=192.168.4.13:6789/0}
+            election epoch 4, quorum 0,1,2 node1,node2,node3
+     osdmap e1: 0 osds: 0 up, 0 in
+            flags sortbitwise
+      pgmap v2: 64 pgs, 1 pools, 0 bytes data, 0 objects
+            0 kB used, 0 kB / 0 kB avail
+                  64 creating
+
+	(在每个虚拟机主机查看自己的服务,各看各的)
+	[root@node1 ceph-cluster]# systemctl status ceph-mon@node1
+	[root@node2 ceph-cluster]# systemctl status ceph-mon@node2
+	[root@node3 ceph-cluster]# systemctl status ceph-mon@node3
+	#备注:管理员可以自己启动、重启、关闭，查看状态.
+
+
+	3)配置OSD服务,共享磁盘(仅在node1主机操作)
+	[首先需要初始化清空所有磁盘]
+	[root@node1 ceph-cluster]# for i in node1 node2 node3
+	 do
+	    ssh  $i  "lsblk"
+	 done
+	#再次确认每台虚拟机是否有共享用的磁盘
+	#vmware里面是sdb和sdc,kvm里面是vdb和vdc.
+
+
+
+	[root@node1 ceph-cluster]# ceph-deploy disk zap  node1:sdb
+	[root@node1 ceph-cluster]# ceph-deploy disk zap  node1:sdc
+	[root@node1 ceph-cluster]# ceph-deploy disk zap  node2:sdb
+	[root@node1 ceph-cluster]# ceph-deploy disk zap  node2:sdc
+	[root@node1 ceph-cluster]# ceph-deploy disk zap  node3:sdb
+	[root@node1 ceph-cluster]# ceph-deploy disk zap  node3:sdc
+
+++++++++++++++++++++++++++++++++++
+###   此时推荐:给虚拟机快照   ####
+++++++++++++++++++++++++++++++++++
+
+
+
+	#启动ceph-osd服务,把磁盘共享出去(仅在node1主机操作)#
+	#提示:只要执行ceph-deploy脚本,必须先cd到ceph-cluster目录
+
+	#[root@node1 ceph-cluster]# ceph-deploy osd create  node1:sdc node1:sdb  node2:sdc node2:sdb  node3:sdc node3:sdb
+	#远程node1、node2、node3
+	#启动3台主机的ceph-osd服务,把sdc共享出去,sdb作为缓存盘.
+
+	[root@node1 ceph-cluster]# ceph -s
+    cluster bf92e6da-2d17-4bfd-ab01-917d3d3690c1
+     health HEALTH_OK
+     monmap e1: 3 mons at {node1=192.168.4.11:6789/0,node2=192.168.4.12:6789/0,node3=192.168.4.13:6789/0}
+            election epoch 12, quorum 0,1,2 node1,node2,node3
+     osdmap e14: 3 osds: 3 up, 3 in
+            flags sortbitwise
+      pgmap v29: 64 pgs, 1 pools, 0 bytes data, 0 objects
+            100 MB used, 61306 MB / 61406 MB avail
+                  64 active+clean
+
+	常见错误:
+	使用osd create创建OSD存储空间时，如提示下面的错误提示：
+	[ceph_deploy][ERROR ] RuntimeError: bootstrap-osd keyring not found; run 'gatherkeys'
+	解决方法如下:
+	[root@node1 ceph-cluster]#  ceph-deploy gatherkeys node1 node2 node3
+
+###提示######
+最终：每个电脑有2个20G的磁盘背共享出去[120G],实际空间不足120G
+因为,每个磁盘都被格式化2个分区,有一个固定的5G分区，剩余所有空间为另外一个分区
+        读写数据
+client ----------5G缓存盘--------剩余空间的数据盘
+
+
+
+	#备注：检查的命令
+	[root@node1 ceph-cluster]# ceph osd tree
+	#查看有几个osd,分别在哪些主机,服务状态
+
+
+	#在三台不同的主机查看服务状态,可以开启,关闭,重启服务.
+	[root@node1 ~]# systemctl status ceph-osd@0
+	[root@node2 ~]# systemctl status ceph-osd@2
+	[root@node3 ~]# systemctl status ceph-osd@3
+	#提醒:这些服务在30分钟只能启动3次,超过就报错.
+	#在这个文件中有定义/usr/lib/systemd/system/ceph-osd@.service
+
+
+
+
+
+
+【创建共享，客户端访问:块共享】
+
+	#备注:ceph有一个共享池的概念以及共享镜像的概念.
+	#共享镜像就是最终提供给用户访问的共享盘
+	#所有共享镜像都必须在某个共享池中
+	#默认ceph提供了一个名称为rbd的共享池.
+
+	[root@node1 ~]# ceph osd lspools
+	#查看共享池,默认有一个名称为rbd的共享池
+
+	[root@node1 ~]# rbd list
+	#查看共享镜像(默认为空)
+
+	[root@node1 ~]# rbd create  jacob  \
+	--image-feature layering  --size 5G
+	#create创建共享镜像,名称为jacob,名称可以任意
+	#该共享支持分层快照的功能,共享大小为5G,大小可以任意.
+	#创建的jacob共享镜像默认在rbd池.
+	[root@node1 ~]# rbd list
+
+	[root@node1 ~]# rbd info jacob
+
+	[root@node1 ~]# rbd create  rbd/xyz  \
+	--image-feature layering  --size 5G
+	#可以在创建镜像时指定在哪个共享池中创建镜像
+
+	【动态调整共享镜像的大小】
+	[root@node1 ~]# rbd resize --image jacob --size 10G
+	[root@node1 ~]# rbd info jacob
+
+	[root@node1 ~]# rbd resize --image jacob --size 7G --allow-shrink
+
+	【客户端访问共享,客户端主机操作】
+	#备注:[root@node1 ~]# cat /etc/ceph/ceph.conf
+	#ceph的配置文件中要求用户访问ceph必须提供密码
+	#auth_cluster_required = cephx
+	#auth_service_required = cephx
+	#auth_client_required = cephx
+	#这里的cephx是密码占位符,密码占位符不是密码.
+	#密码在cat /etc/ceph/ceph.client.admin.keyring文件
+
+	[root@client ~]# yum -y install ceph-common
+	[root@client ~]# scp node1:/etc/ceph/ceph.conf  /etc/ceph/
+	[root@client ~]# scp node1:/etc/ceph/ceph.client.admin.keyring  /etc/ceph/
+	#备注:客户端有配置文件就知道ceph集群在哪.
+	#客户端有keyring文件才有权限访问ceph集群.
+	
+	[root@client ~]# lsblk
+	[root@client ~]# rbd map jacob			#访问共享
+	[root@client ~]# lsblk
+	[root@client ~]# mkfs.xfs /dev/rbd0
+	[root@client ~]# mount /dev/rbd0   /mnt/
+	[root@client ~]# echo "hello the world" > /mnt/test.txt

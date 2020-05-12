@@ -1,0 +1,14 @@
+
+
+
+timedatectl list-timezones  查看
+
+timedatectl set-timezone
+
+
+
+
+用template模块，支持调用变量
+
+变量直接用ansible自动的facts变量
+

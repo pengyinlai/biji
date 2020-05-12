@@ -1,0 +1,41 @@
+准备工作：
+IP，主机名，hosts解析，ssh密钥，时间同步，yum源，防火墙，selinux
+
+部署ceph：
+  1.安装软件
+  ceph-deploy(脚本)
+  ceph-mon  ceph-osd  ceph-mds  ceph-radosgw(集群)
+
+  2.修改配置启动服务mon
+  mkdir  目录；cd 目录
+  ceph-deploy  new  node1   node2   node3  (生成配置文件)
+  ceph-deploy  mon  create-initial  (启动服务)
+
+  3.启动osd共享硬盘
+   ceph-deploy  disk  zap   主机名:磁盘名  ...  ...
+   (初始化磁盘)
+  ceph-deploy  osd  create  主机名:磁盘   ...  ...
+
+使用Ceph思路:
+ 1.块共享
+  服务器: rbd  create  创建一个共享镜像
+  客户端: 安装cpeh-common;  cp 配置文件和密钥
+          rbd  map  |  rbd  unmap
+
+2.文件系统共享(文件系统由inode和block)
+  服务器: 创建两个共享池(名称任意)
+         使用两个共享池合并一个文件系统
+         安装ceph-mds软件，并启动服务(ceph-deploy  mds  create  node3)
+  客户端： mount  -t  MON的IP:6789:/   /挂载点   -o  name=用户名,secret=密码
+
+3.对象存储
+   服务器启动一个radosgw即可(RGW)
+   ceph-deploy  rgw  create  node3
+
+#备注(ceph-deploy脚本用法)
+   ceph-deploy  new   node1  node2  node3    #生成配置文件
+   ceph-deploy  mon   create-initial         #远程所有主机启动mon服务
+   ceph-deploy  disk zap  主机名:磁盘名       #初始化磁盘
+   ceph-deploy  osd   create  主机名:磁盘名   #远程主机并启动osd服务
+   ceph-deploy  mds   create   主机名        #远程主机并启动mds服务
+   ceph-deploy  rgw  create  主机名          #远程主机并启动RGW服务

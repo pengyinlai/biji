@@ -1,0 +1,156 @@
+【ceph快照】
+[root@node1 ~]# rbd snap ls --image jacob
+#查看jacob共享是否有快照
+
+[root@node1 ~]# rbd snap create --image jacob \
+--snap jacob-snap1
+#通过snap create指令,给jacob镜像创建快照,快照名称为jacob-snap1
+#快照名称可以任意.
+
+[root@node1 ~]# rbd snap ls --image jacob
+
+【ceph不支持在线还原快照】
+
+[root@client ~]# rm /mnt/test.txt
+[root@client ~]# umount /mnt/
+
+[root@node1 ~]# rbd snap rollback --image jacob \
+--snap jacob-snap1
+#通过rollback指令还原快照
+
+[root@client ~]# mount /dev/rbd0 /mnt/
+[root@client ~]# ls  /mnt/
+
+[root@client ~]# rbd showmapped
+
+
+【基于快照创建一个新共享镜像image】
+[root@node1 ~]# rbd snap ls --image jacob
+SNAPID NAME           SIZE
+	 4 jacob-snap1 7168 MB
+#查看快照,发现jacob镜像有一个快照.快照名称为jacob-snap1
+
+[root@node1 ~]# rbd snap protect \
+--image jacob --snap jacob-snap1
+#保护快照,对jacob共享盘的jacob-snap1这个快照进行保护.
+
+[root@node1 ~]# rbd snap rm --image jacob --snap jacob-snap1
+#删除快照演示,会出错.
+
+[root@node1 ~]# rbd clone jacob --snap jacob-snap1 kelong --image-feature layering
+#rbd clone 老的镜像  --snap 快照名  克隆新的名 称  --image-feature layering
+[root@node1 ~]# rbd list
+[root@node1 ~]# rbd info kelong			#可以查看到快照的信息
+[root@node1 ~]# rbd flatten kelong		#把镜像与快照分离
+[root@node1 ~]# rbd info kelong			#一个独立的镜像盘
+
+[root@node1 ~]# rbd snap unprotect --image jacob --snap jacob-snap1
+#取消对快照的保护
+[root@node1 ~]# rbd snap rm --image jacob --snap jacob-snap1
+#删除快照
+[root@node1 ~]# rbd snap list --image jacob
+#查看快照
+
+
+【客户端取消挂载】
+[root@client ~]# rbd showmapped
+
+[root@client ~]# umount  /dev/rbd0
+[root@client ~]# rbd unmap  jacob
+#通过共享名称卸载
+[root@client ~]# rbd unmap  /dev/rbd1
+#通过设备名卸载
+
+ceph支持块共享、文件系统共享、对象存储共享
+
+
+块:没有经过格式化的裸盘.
+文件系统:格式化后变成文件系统(ext3,ext4,ntfs,xfs....)
+
+一个文件系统应该由：inode区和block区组成
+
+ceph创建共享池(存metadata元数据),创建共享(存data数据)
+
+
+【ceph文件系统】
+
+	1)创建文件系统
+	[root@node1 ~]# ceph osd lspools
+	#查看共享池
+
+	[root@node1 ~]# ceph osd pool create cephfs_data 64
+	[root@node1 ~]# ceph osd pool create cephfs_metadata 64
+	#创建ceph共享池,共享池的名称为cephfs_data和cephfs_metadata
+	#PG个数为64个.
+
+	[root@node1 ~]# ceph fs new myfs1 cephfs_metadata cephfs_data
+	#使用共享池cephfs_metadata和cephfs_data
+	#通过fs new合并两个池子创建一个文件系统,名称为myfs1(任意名称)
+	#哪个池子在前面哪个就作inode,哪个池子在后面哪个就作block
+
+	[root@node1 ~]# ceph fs ls		#查看文件系统
+
+	【ceph目前的版本仅支持作一个文件系统】
+
+
+	2)装包、启服务[仅node1主机操作]
+	#前面已经通过for循环给所有主机安装了ceph-mds(文件系统的服务)
+	#提醒:执行ceph-deploy脚本必须先cd到特定的目录下.
+	[root@node1 ~]# cd /root/ceph-cluster/
+	[root@node1 ceph-cluster]# ceph-deploy mds create node3
+	#远程node3启动mds服务.
+
+
+	3)客户端访问:
+	[root@client ~]# mkdir /data
+	[root@client ~]# mount -t ceph \
+	192.168.4.11:6789:/  /data  \
+	-o name=admin,secret=AQCuIGZe9KrPGRAANKf9GPF+NjxzMJYRIBnZqw==
+	#备注:-t文件系统类型是ceph
+	#访问的服务器是192.168.4.11:6789端口
+	#把ceph文件系统挂载到本地的/data目录
+	#name是用户名,secret是密码.
+	#用户和密码参考/etc/ceph/ceph.client.admin.keyring文件
+
+	#扩展：给ceph创建用户
+	[root@node1 ~]# ceph auth get-or-create client.nb \
+	osd  'allow *' \
+	mds  'allow *' \
+	mon  'allow *'      > 文件
+	[root@node1 ~]# ceph auth list
+
+
+【ceph对象存储】
+	对象存储:
+	也就是键值存储，通其API接口指令才能读写数据
+	也就是简单的GET、PUT、DEL和其他扩展
+	向存储服务上传下载数据对象存储中所有数据都被认为是一个对象
+	所以，任何数据都可以存入对象存储服务器
+	如图片、视频、音频等
+	RGW全称是Rados GatewayRGW是Ceph对象存储网关，
+	用于向客户端应用呈现存储界面，提供RESTful API访问接口.
+
+
+
+	#前面已经通过for循环给所有主机安装了ceph-mds(文件系统的服务)
+	#提醒:执行ceph-deploy脚本必须先cd到特定的目录下.
+	[root@node1 ~]# cd /root/ceph-cluster/
+	[root@node1 ceph-cluster]# ceph-deploy rgw create node3
+	#远程node3把radosgateway服务启动.
+	#备注:ceph-radosgw软件在前面准备环境时已经按照.
+
+	[root@node3 ~]# systemctl status  ceph-radosgw@rgw.node3
+	#在node3查看服务状态.
+
+	【修改radosgw默认的端口号】
+	#默认rgw的端口为7480,可以修改为其他端口如8000等等.
+
+	[root@node3 ~]# ss -ntulp |grep rados     #默认rgw的端口为7480
+	[root@node3 ~]# vim /etc/ceph/ceph.conf
+	#在配置文件末尾手动追加内容如下:
+	[client.rgw.node3]
+	host = node3
+	rgw_frontends = "civetweb port=8000"
+
+	[root@node3 ~]# systemctl restart ceph-radosgw@rgw.node3.service
+	[root@node3 ~]# ss -ntulp |grep rados     #变成了8000端口

@@ -1,0 +1,514 @@
+sudo
+【root可以提前给普通用户授权，授权普通用户执行特定的管理命令】
+比如root可以给tom授权，让他可以执行systemctl命令
+    root可以给jerry授权，让他可以执行parted命令
+root  systemctl  ---->tom
+root  parted     ---->jerry
+
+sudo基本流程如下：
+1.管理员需要先授权（修改/etc/sudoers文件）
+2.普通用户以sudo的形式执行命令
+3.可以通过sudo -l查看授权情况
+
+修改/etc/sudoers的方法如下：
+visudo（带语法检查，默认没有颜色提示）
+vim /etc/sudoers（不带语法检查，默认有颜色提示）
+授权格式如下：
+用户或组 主机列表=(提权身份) [NOPASSWD]:命令列表
+注意事项：命令需要写绝对路径。
+#NOPASSWD的意思是执行sudo不需要输入自己的密码.
+
+
+下面我们通过ansible批量给所有被管理主机node1-node5
+修改/etc/sudoers
+
+
+[root@control ~]# ansible all -m user -a "name=alice \
+password={{'123456' | password_hash('sha512')}}"
+#批量创建系统账户，账户名称为alice，密码为123456。
+
+
+[root@control ~]# ansible all -m lineinfile \
+-a "path=/etc/sudoers line='alice  ALL=(ALL) /usr/bin/systemctl'"
+#调用lineinfile模块，修改/etc/sudoers文件
+#在该文件的末尾添加一行新的内容,内容是line=后面的内容
+
+[验证]
+可以任意找一台node主机，su - alice切换用户
+执行sudo  systemctl  restart   服务名
+
+
+[root@control ~]# ansible all -m lineinfile \
+-a "path=/etc/sudoers line='alice  ALL=(ALL) NOPASSWD:ALL'"
+
+
+
+######################
+修改ansible配置文件
+######################
+默认ansible是通过root远程被管理端主机
+可以修改配置文件以普通用户远程被管理端主机执行自动化运维
+#可以参考/etc/ansible/ansible.cfg#
+[root@control ansible]# vim ~/ansible/ansible.cfg
+[defaults]
+inventory = ~/ansible/hosts
+remote_user = alice                #以什么用户远程被管理主机
+#host_key_checking = False       #是否校验密钥
+[privilege_escalation]
+become = true                    #是否需要切换用户
+become_method = sudo             #如何切换用户
+become_user = root               #切换成什么用户
+become_ask_pass = no             #sudo是是否需要输入密码
+
+#为了让ansible以后可以通过alice远程被管理端主机
+#我们需要给alice用户远程ssh密钥
+[root@control ~]# for i in node1  node2  node3  node4  node5
+do
+  ssh-copy-id    alice@$i
+done
+
+
+
+###############################
+修改主机清单文件
+###############################
+修改inventory主机清单配置文件（参考即可，非必须的操作）
+如果个别主机账户不同该如何处理呢？如何有些主机需要使用密码呢？有些主机的SSH端口不是22呢？
+[root@control ~]# cat  ~/ansible/hosts
+[test]
+node1           ansible_ssh_port=220                      #自定义远程SSH端口
+[proxy]
+node2           ansible_ssh_user=alice                    #自定义远程连接的账户名
+[webserver]
+node[3:4]        ansible_ssh_pass=密码                     #自定义远程连接的密码
+[database]
+node5            ansible_ssh_private_key_file=密钥文件        #自定义远程连接的密钥
+[cluster:children]
+webserver
+database
+
+
+
+++++++++++++++++++++++++++++++++++++++
+Playbook剧本
+++++++++++++++++++++++++++++++++++++++
+
+剧本的样式，格式参考课程PPT
+
+[root@control ansible]# vim test.yml
+---
+- hosts: all		#定义需要远程管理的主机是谁
+  tasks:			#定义需要执行的任务是什么
+    - name: ping all		#给第一个任务取个名称
+      ping:					#第一个任务调用ping模块
+
+[root@control ansible]# ansible-playbook test.yml
+
+
+
+hosts由一个或多个组或主机组成，逗号分隔，tasks由一个或多个任务组成，多个任务按顺序执行，可以使用-f选项自定义并发量。
+[root@control ansible]# vim ~/ansible/test.yml
+- hosts: test,webserver     #远程谁
+  tasks:
+      - name: This is my first playbook  #定义名字
+        ping:							 #模块
+      - name: Run a shell command        #第二个任务
+        shell: touch ~/shell.txt		 #模块
+
+[root@control ansible]# ansible-playbook ~/ansible/test.yml  -f 5
+
+
+#############################
+多个play的Playbook文件
+#############################
+[root@control ansible]# vim ~/ansible/test.yml
+#第一个play
+---
+- hosts: test
+  tasks:
+      - name: This is first play
+        ping:
+#第二个play
+- hosts: webserver
+  tasks:
+      - name: This is second play
+        ping:
+
+
+为了更好的让vim自动使用两个空格缩进可以做如下操作:
+修改VIM配置文件，自动使用空格替换tab键。
+[root@control ansible]# vim ~/.vimrc
+autocmd FileType yaml setlocal ai  ts=2 sw=2  et
+
+#使用2个空格自动替换tab键，tabstop=2、expandtab
+#开启自动缩进对齐，缩进宽度为2个空格，shiftwidth=2
+
+
+
+[root@control ansible]# vim ~/ansible/test_john.yml
+---
+- hosts: webserver
+  tasks:
+    - name: Add the user 'johnd'
+      user:
+        name: johnd
+        uid: 1040
+        group: daemon
+        password: "{{ '123' | password_hash('sha512') }}"
+
+#hosts定义需要远程的对象是webserver组
+#tasks是需要执行的任务
+# -name是第一个任务的描述信息
+# user是需要调用的模块，user下面的缩进内容是给user的参数
+# name是需要创建的用户名，uid是用户ID号
+# group是用户属于哪个基本组
+# password是用户的密码，密码是123，密码经过sha512算法加密
+
+
+
+
+用户管理，创建系统账户、账户属性、设置密码。
+[root@control ansible]# cat ~/ansible/test_john.yml
+---
+hosts: webserver
+tasks:
+  - name: Add the user 'johnd'
+    user:
+      name: johnd
+      uid: 1040
+      group: daemon
+      password:  password: "{{ '123' | password_hash('sha512') }}"
+#hosts定义需要远程的对象是webserver组
+#taksk定义需要执行的任务
+#user是需要调用的模块，user下面的缩进内容是给user的参数
+#name是需要创建的用户名，uid是用户ID号
+#grup是基本组，password是设置用户的密码.
+
+
+[root@control ansible]# cat ~/ansible/user_james.yml
+---
+- hosts: webserver
+  tasks:
+    - name:  Add 'james' with a bash shell, set 'bin' and 'adm' to the user's groups
+      user:
+        name: james
+        shell: /bin/bash
+        groups: bin,adm
+        password: "{{ '123' | password_hash('sha512') }}"
+#与上一个例子类似创建用户
+#groups是用户的附加组，shell是指定用户的解释器
+
+[root@control ansible]# cat ~/ansible/user_johnd.yml
+---
+- hosts: webserver
+  tasks:
+    - name: Remove the user 'johnd'
+      user:
+        name: johnd
+        state: absent
+#删除系统账户johnd
+#state等于absent用来删除用户
+
+
+
+################################################
+使用playbook剧本，自动分区，创建VG，创建LV
+################################################
+
+【在node1上确认下自己磁盘的情况】
+[root@node1 ~]# lsblk
+#看自己磁盘名称
+#看自己磁盘现在有几个分区
+#比如，我的是/dev/sdb，已经有2个分区
+
+
+【在control主机编写剧本给node1创建新的分区，创建VG和LV】
+[root@control ansible]# vim lvm.yml
+---
+- hosts: node1
+  tasks:
+    - name: Create a new primary partition  #任务的描述信息
+      parted:							#调用parted模块进行分区
+        device: /dev/sdb				#对/dev/sdb磁盘进行分区
+        label: gpt						#分区表类型为gpt，或msdos
+        number: 1						#分区编号(创建第几个分区)
+        state: present					#present是创建分区,absent是删除分区
+        part_start: 1MiB 				#分区的开始位置
+        part_end: 2GiB					#分区的结束位置
+    - name: Create a volume group		#第二个任务的描述信息
+      lvg:								#调用lvg模块,创建VG卷组
+        vg: myvgtoo						#创建的卷组名称
+        pvs: /dev/sdb1					#使用哪个分区创建PV
+    - name: Create a logical volume		#第三个任务的描述信息
+      lvol:								#调用lvol模块创建LV
+        vg: myvgtoo						#使用哪个VG创建LV
+        lv: mylvtoo						#需要创建的LV名称
+        size: 512						#要创建的LV大小,默认单位m
+
+[root@control ansible]# ansible-playbook lvm.yml
+
+
+[root@control ~]# vim /tmp/ansible/package.yml
+---
+- hosts: webserver						#需要远程的主机是谁
+  tasks:								#定义剧本需要执行的任务
+    - name: Install a list of packages	#第一个任务的描述信息
+      yum:								#调用yum模块安装软件
+        name: 							#安装软件的名字
+          - httpd						#安装httpd软件
+          - mariadb						#安装mariadb软件
+          - mariadb-server				#安装mariadb-server
+    - name: install group soft			#第二个任务的描述信息
+      yum:								#调用yum模块安装软件组包
+        name: "@Development tools"		#安装哪个组包
+    - name: update software				#第三个任务的描述信息
+      yum:								#调用yum模块升级软件
+        name: '*'						#需要升级哪些软件
+        state: latest					#latest代表升级软件
+#备注:state的值可以是(present|absent|latest)
+#present代表安装软件(默认是present)
+#absent代表卸载软件
+#latest代表升级软件
+
+
+
+
+++++++++++++++++++++++++++
+setup模块
+++++++++++++++++++++++++++
+ansible_facts用于采集被管理设备的系统信息，所有收集的信息都被保存在变量中，每次执行playbook默认第一个任务就是Gathering Facts，使用setup模块可以查看收集到的facts信息。
+
+[root@control ansible]# ansible test -m setup
+#远程test主机获取该主机的facts信息并显示在屏幕上
+
+尝试找出下面这些变量
+ansible_all_ipv4_addresses   	#IP地址
+ansible_bios_version		 	#主板BIOS版本
+ansible_memtotal_mb				#总内存
+ansible_hostname				#主机名
+ansible_devices.sdb.partitions.sdb1.size  #某个磁盘的大小
+
+
+#################################
+debug模块可以显示facts变量的信息
+#################################
+[root@control ansible]# vim debug.yml
+---
+- hosts: node1
+  tasks:
+    - debug:
+        var: ansible_all_ipv4_addresses
+    - debug:
+        msg: "主机名是:{{ ansible_hostname }}"
+    - debug:
+        var: ansible_devices.sda.partitions.sda1.size
+    - debug:
+        msg: "总内存大小:{{ ansible_memtotal_mb }}"
+
+#备注调用debug模块显示某些具体的变量值
+#debug模块可以显示变量的值，可以辅助排错
+#debug模块有两个参数，var和msg（引用变量需要{{}})。
+#var后面调用变量不需要使用{{}}
+#msg后面调用变量需要使用{{}}
+
+
+
+#######################################
+在ansible中定义变量的若干中方法
+#######################################
+1.Inventory变量
+2.Host Facts变量
+3.Register变量
+4.Playbook变量
+5.Playbook提示变量
+6.变量文件
+7.命令行变量
+
+
+1.在inventory主机清单中定义变量
+[root@control ansible]# vim ~/ansible/hosts
+[test]
+node1  myvar1="hello the world"    myvar2="content"
+[proxy]
+node2
+[webserver]
+node[3:4]
+[database]
+node5
+[cluster:children]
+webserver
+database
+[webserver:vars]
+yourname="jacob"
+
+#备注，在node1主机后面给该主机添加两个变量myvar1和myvar2.
+#给webserver组定义变量,vars是关键词不可以改变,webserver是上面定义的组
+#给这个组定义变量yourname="jacob"
+
+
+下面编写剧本调用刚才的变量：(在剧本中需要调用变量是要使用{{}})
+[root@control ansible]# vim ~/ansible/inventory_var.yml
+---
+- hosts: test					#定义需要远程管理的主机是谁
+  tasks:						#定义剧本需要执行的任务
+    - name: create a file		#第一个任务的描述信息
+      shell: echo {{myvar1}} > /tmp/{{myvar2}}
+#调用shell模块使用echo命令在/tmp目录下创建一个文件
+#echo的内容是在inventory主机清单中提前定义好的变量myvar1
+#创建的文件名是inventory主机清单中提前定义好的变量myvar2
+- hosts: webserver				#剧本中的第二个剧目,需要连接的主机
+  tasks:						#第二个剧目要完成哪些任务
+    - name: create a user		#第二个剧目中的第一个任务描述信息
+      user:						#调用user模块创建用户
+        name: "{{yourname}}"	#需要创建的用户名是yourname这个变量
+
+#注意事项：
+#在ansible剧本中当调用变量时，
+#开始位置就调用变量,就需要在{{}}外面加双引号
+#如果是在后面或者中间位置调用变量{{}}外面可以不加双引号
+#如:
+#  "{{ myvar1 }}"
+#  nihao {{ myvar1 }}
+
+
+
+2.在剧本中直接调用系统自带的ansible_facts变量.
+[root@control ansible]# vim ~/ansible/facts_var.yml
+---
+- hosts: all
+  tasks:
+    - name: Use facts info.
+      copy:
+        content: "{{ansible_hostname}}:{{ansible_bios_version}}"
+        dest: /tmp/facts.txt
+#定义剧本，远程所有被管理主机
+#调用copy模块，拷贝文件
+#拷贝文件时没有源文件，直接通过content参数指定需要拷贝的文件内容是什么即可
+#需要拷贝的内容调用了ansible_facts变量
+#拷贝这些内容到所有主机/tmp/facts.txt文件
+#{{}}的作用是调用前面的变量,括号中是变量名.
+
+[root@control ansible]# ansible-playbook   	facts_var.yml
+
+
+
+
+###########################
+register变量
+###########################
+register可以将某个命令的执行结果保存到变量中。
+
+[root@control ansible]# vim ~/ansible/register.yml
+---
+- hosts: test
+  tasks:
+    - name: save shell result to a variable.
+      shell: hostname
+      register: myvar
+    - name: print the variable's value through debug
+      debug:
+        msg: "{{ myvar }}"
+#编写剧本，远程test主机
+#第一个任务调用shell模块执行hostname命令
+#通过register关键词，把上一条命令的输出结果保存到myvar变量
+#第二个任务调用debug模块，显示myvar变量的值
+#{{}}的作用是调用前面的变量,括号中是变量名.
+
+
+
+[root@control ansible]# vim ~/ansible/register.yml
+---
+- hosts: test
+  tasks:
+    - name: save shell result to a variable.
+      shell: hostname
+      register: myvar
+    - name: print the variable's value through debug
+      debug:
+        msg: "{{ myvar.stdout }}"
+#通过"."我们还可以仅提取部分数据.
+#{{}}的作用是调用前面的变量,括号中是变量名.
+
+########################################################
+Playbook变量(使用vars关键词可以在playbook内定义变量)
+########################################################
+[root@control ansible]# vim ~/ansible/playbook_var.yml
+---
+- hosts: test
+  vars:						      #vars是关键词，用来定义变量用的
+    iname: heal				  #具体变量名是iname，值是heal
+    ipass: '123456'			#再定义一个变量名是ipass，值是123456
+#注意密码必须是字符串，需要引号
+  tasks:					#tasks定义需要执行的任务
+    - name: Use variables create user.	#给任务写个描述信息
+      user:								              #调用user模块创建用户
+        name: "{{ iname }}"				      #用户名的是前面定义的变量
+        password: "{{ ipass | password_hash('sha512') }}"
+#密码是前面定义好的ipass,管道给password_hash把密码加密下.
+#{{}}的作用是调用前面的变量,括号中是变量名.
+
+
+##############################
+vars_prompt提示变量
+##############################
+[root@control ansible]# vim prompt_var.yml
+---
+- hosts: test
+  vars_prompt:                #vars_prompt是关键词,定义提示变量
+    - name: iname             #name定义变量的名称为iname
+      prompt: "请输入用户名"   #执行剧本时的提示信息[任意字符]
+      private: no             #private/隐私/,回显用户名
+    - name: ipasswd           #name定义变量的名称为iname
+      prompt: "请输入密码"     #执行剧本时的提示信息[任意字符]
+      private: yes            #private/隐私/不显示密码
+  tasks:
+    - name: Create a user.
+      user:
+        name: "{{ iname }}"
+        password: "{{ ipasswd | password_hash('sha512') }}"
+#调用user模块创建用户和组,用户名是前面定义好的变量,密码也是变量.
+#{{}}的作用是调用前面的变量,括号中是变量名.
+
+
+#################################
+专门定义个变量文件，给剧本调用
+#################################
+
+[root@control ansible]# vim ~/ansible/variables.yml
+---
+iname: cloud
+ipass: '123456'
+#创建文件，定义两个变量(定义变量的文件名是variables.yml,文件名可以任意,路径任意)
+
+[root@control ansible]# vim  ~/ansible/file_var.yml
+---
+- hosts: test
+  vars_files: variables.yml        #调用前面的变量文件(注意路径和文件名要对)
+  tasks:                           #tasks定义需要执行哪些任务
+    - name: create user.           #第一个任务的描述信息
+      user:                        #第一个任务调用user模块创建用户
+        name: "{{ iname }}"        #用户名是变量
+        password: "{{ ipass | password_hash('sha512') }}"
+#密码是变量
+
+
+
+
+###################################
+执行ansible-playbook命令时定义变量
+###################################
+
+[root@control ansible]# vim  command_var.yml
+---
+- hosts: test
+  tasks:
+    - name: create user
+      user:
+        name: "{{ iname }}"
+        password: "{{ ipass | password_hash('sha512') }}"
+#这个剧本，不定义变量，直接调用user模块创建用户.
+#创建的用户名是iname这个变量,密码是ipass这个变量[变量暂时未定义]
+
+[root@control ansible]# ansible-playbook command_var.yml \
+-e iname="beth" -e ipass="123456"
+#通过ansible-playbook命令执行剧本时才定义变量并赋值.

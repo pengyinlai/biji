@@ -1,0 +1,690 @@
+#
+#
+
+[root@control ansible]# vim  firewall.yml
+---
+- hosts: test                        #hosts定义需要远程的主机
+  tasks:                             #tasks定义需要执行哪些剧本
+    - name: install firewalld.       #name第一个任务定义描述信息
+      yum:                           #第一个任务调用yum模块安装软件
+        name: firewalld              #需要安装的软件名称未firewalld
+        state: present               #state等于present代表安装软件
+    - name: run firewalld.           #定义第二个任务的描述信息
+      service:                       #第二个任务调用service模块启动服务
+        name: firewalld              #启动的服务名称未firewalld
+        state: started               #state等于started代表启动服务
+        enabled: yes                 #enabled等于yes是设置服务为开机自启动
+    - name: set firewalld rule.      #第三个任务的描述信息
+      firewalld:                     #第三个任务调用firewalld模块设置防火墙规则
+        port: 80/tcp                 #在防火墙规则中添加一个tcp，80端口的规则
+        permanent: yes               #permaenent 是设置永久规则
+        immediate: yes               #immediate 是让规则立刻生效
+        state: enabled               #state等于enabled是添加防火墙规则
+#在默认zone中添加一条放行80端口的规则
+
+
+
+
+######################################
+template模块
+######################################
+template模块可以拷贝文件，类似copy模块
+template模块拷贝的文件内容中可以包含变量,但是copy模块不可以
+
+如果希望每个拷贝的文件内容都不一样呢？
+如何给所有web主机拷贝index.html内容是各自的IP地址？
+Ansible可以利用Jinja2模板引擎读取变量，之前在playbook中调用变量，
+也是Jinja2的功能，Jinja2模块的表达式包含在分隔符"{{ }}"内。
+
+
+[root@control ansible]# mkdir ~/ansible/template
+
+[root@control ansible]# vim ~/ansible/template/index.html
+Welcom to {{ansible_hostname}} on {{ ansible_ens33.ipv4.address }}.
+
+#文件内容里面的{{ansible_hostname}}是ansible_facts变量:主机名
+#文件内容里面的{{ ansible_ens33.ipv4.address }}是ansible_facts变量：网卡IP
+#注意：网卡名称不要照抄
+
+[root@control ansible]# vim template.yml
+---
+- hosts: webserver
+  tasks:
+    - name: use template copy index.html to webserver.
+      template:
+        src: ~/ansible/template/index.html
+        dest: /tmp/index.html
+#hosts定义需要远程的目标主机是谁
+#tasks定义需要执行的任务是什么
+#- name定义任务的描述信息
+#任务需要调用的模块是template模块
+#template模块需要两个参数，src指定需要拷贝的源文件，dest指定需要拷贝的目标位置
+#src: ~/ansible/template/index.html可以上面创建的文件,文件中包含变量
+#dest: /tmp/index.html拷贝到目标主机放在/tmp目录下
+
+
+
+####################################
+          剧本的中断问题
+####################################
+默认ansible在遇到error会立刻停止playbook剧本
+如果一个剧本里面有20个任务，执行到第3个时失败，则不再往下执行
+
+[root@control ansible]# vim  error.yml
+---
+- hosts: test
+  tasks:
+    - name: start a service that does not exist.
+      service:
+        name: hehe      #没有这个服务
+        state: started
+    - name: touch a file.
+      file:
+        path: /tmp/service.txt
+        state: touch
+
+
+如果有些任务就是可能会失败，
+失败了我也需要剧本继续执行，
+则可以使用ignore_errors忽略错误。
+
+[root@control ansible]# vim  error.yml
+---
+- hosts: test
+# ignore_errors: true   #针对playbook全局忽略错误
+  tasks:
+    - name: start a service that does not exist.
+      service:
+        name: hehe             #没有这个服务
+        state: started
+      ignore_errors: true      #针对某一个任务忽略错误
+    - name: touch a file.
+      file:
+        path: /tmp/service.txt
+        state: touch
+
+#在某一个任务后面或者在全局添加ignore_errors都可以，根据自己的需求选择。
+
+
+
+当某个任务需要依赖其他任务怎么办？
+可以通过handlers定义一组任务，
+仅当某个任务触发(notify)handlers时才执行相应的任务，
+如果有多个notify触发执行handlers任务，也仅执行一次。
+
+[root@control ansible]# vim handlers.yml
+---
+- hosts: test
+  tasks:
+    - name: create directory.  #多次执行playbook该任务状态不再是changed
+      file:
+        path: /tmp/parents/subdir/     #调用file模块创建目录
+        state: directory               #state等于directory代表创建目录
+      notify: touch file   #notify后面名称必须和handlers中的任务名称一致
+  handlers:                            #通过handlers再定义一组任务
+    - name: touch file                 #给任务写描述信息（任务的名字）
+      file:                            #调用file模块创建文件
+        path: /tmp/parents/subdir/new.txt      #需要创建的文件名
+        state: touch                           #state等于touch代表创建文件
+
+#备注：仅当file模块执行成功，
+#并且状态为changed时才会通过notify触发执行handlers下面的任务，
+#notity后面的名称必须和handlers下面定义的任务名称一致（名称可以任意）。
+#所以多次执行该剧本时，handlers任务不会被重复执行.
+
+
+
+########################################
+            when条件判断
+########################################
+when可以定义判断条件，条件为真时才执行某个任务。
+常见条件操作符有：==、!=、>、>=、<、<=。
+多个条件可以使用and或or分割，when表达式中调用变量不要使用{{ }}。
+
+[root@control ansible]# vim when_1.yml
+---
+- hosts: test
+  tasks:
+    - name: check memory size.
+      service:
+        name: NetworkManager
+        state: stopped
+      when: ansible_memfree_mb < 700
+
+#远程主机剩余内存不足700M则关闭NetworkManager服务
+#ansible_memfree_mb这个是ansible自带的facts变量,代表剩余内存的容量.
+
+
+
+[root@control ansible]# vim when_2.yml
+---
+- hosts: test
+  tasks:
+    - name: touch a file
+      file:
+        path: /tmp/when.txt
+        state: touch
+      when:  >
+        ansible_distribution == "CentOS"
+           and
+        ansible_distribution_major_version == "7"
+#判断操作系统是CentOS 7则创建测试文件[我们用的不是centos7，是RedHat8]。
+#YAML的语法格式中>支持多行输入，但不保留换行符（计算机会认为实际是一行内容）。
+#ansible_distribution和ansible_distribution_major_version都是自带的facts变量.
+#可以使用setup模块查看这些变量.
+
+
+
+
+#如果我们需要当条件满足时执行N个任务.
+#我们可以给N个任务后面都加when判断(但是很麻烦)
+#此时可以使用block定义一个任务块,当条件满足时执行整个任务块.
+#任务块就是把一坨任何合并一下.
+#使用block语句可以将多个任务合并为一个任务组.
+
+[root@control ansible]# vim block_1.yml
+---
+- hosts: test
+  tasks:
+    - name: define a group of tasks.
+      block:                            #block是关键词，定义任务组
+        - name: install httpd           #任务组中的第一个任务
+          yum:                          #调用yum模块安装httpd软件包
+            name: httpd
+            state: present
+        - name: start httpd             #任务组中的第二个任务
+          service:                      #调用service模块启动httpd服务
+            name: httpd
+            state: started
+      when: ansible_distribution == "RedHat"    #仅当条件满足再执行任务组.
+#注意:when和block是对齐的,他们在一个级别,当条件满足要执行的是任务组[不是某一个任务]
+#判断条件是看远程的目标主机使用的Linux发行版本是否是RedHat.
+
+
+
+
+
+#对于block任务块，我们可以使用rescue语句定义在block任务执行失败时要执行的其他任务，
+#还可以使用always语句定义无论block任务是否成功，都要执行的任务。
+#当block任务块执行失败时，rescue就是一个弥补措施.
+#always是不管block任务执行成功或失败，都要执行的任务.
+
+[root@control ansible]# vim  block_2.yml
+---
+- hosts: test
+  tasks:
+    - block:
+        - name: touch a file test1.txt
+          file:
+            name: /tmp/test1.txt     #如果改为/tmp/xyz/test1.txt就无法创建成功
+            state: touch
+      rescue:
+        - name: touch a file test2.txt
+          file:
+            name: /tmp/test2.txt
+            state: touch
+      always:
+        - name: touch a file test3.txt
+          file:
+            name: /tmp/test3.txt
+            state: touch
+#默认在/tmp/目录下创建test1.txt会成功，所以不执行rescue(创建test2.txt)
+#如果我们把block中的任务改为创建/tmp/xyz/test1.txt（因为没有xyz目录所以会失败)
+#当block失败时就执行rescue任务(创建test2.txt)
+#但是不管是否成功都执行always任务(创建test3.txt)
+
+
+
+
+
+##################################
+          loop循环
+##################################
+相同模块需要反复被执行怎么处理？使用loop循环可以避免重复。
+
+
+[root@control ansible]# vim simple_loop.yml
+---
+- hosts: test
+  tasks:
+    - name: mkdir multi directory.
+      file:
+        path: /tmp/{{item}}         #注意,item是关键字，调用loop循环的值
+        state: directory
+      loop:                         #loop是关键词,定义循环的值,下面是具体的值
+        - School
+        - Legend
+        - Life
+#最终在/tmp目录下创建三个子目录.file模块被反复执行了三次.
+#mkdir  /tmp/School;  mkdir  /tmp/Legend;   mkdir  /tmp/Life
+
+
+
+
+
+[root@control ansible]# vim complex_loop.yml
+---
+- hosts: test
+  tasks:
+    - name: create multi user.
+      user:
+        name: "{{item.iname}}"
+        password: "{{item.ipass | password_hash('sha512')}}"
+      loop:
+        - { iname: 'term', ipass: '123456' }
+        - { iname: 'amy' , ipass: '654321' }
+#loop循环第一次调用user模块创建用户,user模块创建用户会读取loop里面的第一个值.
+#loop第一个值里面有两个子值,iname和ipass
+#创建用户item.iname就是loop第一个值里面的iname=term
+#修改密码item.ipass就是loop第一个值里面的ipass=123456
+
+#loop循环第二次调用user模块创建用户,user模块创建用户会读取loop里面的第二个值.
+#loop第二个值里面有两个子值,iname和ipass
+#创建用户item.iname就是loop第二个值里面的iname=amy
+#修改密码item.ipass就是loop第二个值里面的ipass=654321
+
+
+
+
+
+######################################
+      使用ansible-vault管理敏感数据
+######################################
+使用ansible-vault对敏感数据进行加密处理
+encrypt（加密）、decrypt（解密）、view（查看）、rekey（修改密码）
+
+[root@control ansible]# echo 123456 > data.txt              #新建测试文件
+[root@control ansible]# ansible-vault encrypt data.txt      #加密文件
+[root@control ansible]# cat data.txt
+[root@control ansible]# ansible-vault view data.txt         #查看加密文件
+
+[root@control ansible]# ansible-vault decrypt data.txt      #解密文件
+[root@control ansible]# cat data.txt
+
+[root@control ansible]# ansible-vault encrypt data.txt           #加密文件，密码111
+New Vault password: 111
+Confirm New Vault password:111
+[root@control ansible]# ansible-vault rekey data.txt             #修改密码
+Vault password: <旧密码>
+New Vault password: <新密码>
+Confirm New Vault password:<确认新密码>
+
+
+
+
+[root@control ansible]# echo "I'm secret data" > data.txt       #需要加密的敏感数据
+[root@control ansible]# echo 123456 > pass.txt                   #加密的密码
+[root@control ansible]# ansible-vault  encrypt --vault-id=pass.txt  data.txt
+#使用pass.txt文件中的密码把data.txt文件加密
+[root@control ansible]# cat data.txt
+[root@control ansible]# ansible-vault decrypt --vault-id=pass.txt data.txt
+[root@control ansible]# cat data.txt
+
+
+
+
+
+加密敏感数据-例1
+[root@control ansible]# echo "I'm secret data" > data.txt       #需要加密的敏感数据
+[root@control ansible]# echo 123456 > pass.txt                  #加密的密码
+[root@control ansible]# ansible-vault  encrypt --vault-id=pass.txt  data.txt
+[root@control ansible]# ansible  test  -m  copy  --vault-id=pass.txt  \
+-a  "src=data.txt dest=/tmp/ mode=0600"
+#把自己的/data.txt文件拷贝给目标主机，放到/tmp目录下,权限是0600.
+
+
+
+
+加密敏感数据-例2
+[root@control ansible]# ansible-vault encrypt variables.yml   #加密文件
+New Vault password:
+Confirm New Vault password:
+
+[root@control ansible]# vim ~/ansible/vault.yml
+---
+- hosts: test
+  vars_files: variables.yml                #提前把这个文件加密
+  tasks:
+    - name: include vault data, create user.
+      user:
+        name: "{{iname}}"
+        password: "{{ipass|password_hash('sha512')}}"
+[root@control ansible]# ansible-playbook  --ask-vault-pass  vault.yml
+#--ask-vault-pass代表执行剧本时提示输入密码(因为有文件被提前加密了)
+
+
+
+
+###############################
+       Ansible Role
+###############################
+在实际生产环境中，为了实现不同的功能，我们会编写大量的playbook文件。
+而且，每个playbook还可能会调用其他文件（如变量文件），对于海量的、无规律的文件，管理起来非常痛苦！
+Ansible从1.2版本开始支持Roles，Roles是管理ansible文件的一种规范（目录结构）
+Roles会按照标准的规范，自动到特定的目录和文件中读取数据。
+如果我们创建了一个名称为user.example的Role。
+
+defualts/main.yml：定义变量的缺省值，优先级较低
+files目录：存储静态文件的目录
+handlers/main.yml:定义handlers
+meta/main.yml:写作者、版本等描述信息
+README.md:整个角色(role)的描述信息
+tasks/main.yml:定义任务的地方
+templates目录：存放动态数据文件的地方（模板文件）
+vars/main.yml:定义变量，优先级高
+
+
+
+
+[root@control ansible]# mkdir ~/ansible/roles
+[root@control ansible]# ansible-galaxy init  ~/ansible/roles/issue
+#创建一个Role，名称为issue
+[root@control ansible]# tree  ~/ansible/roles/issue/
+#查看目录结构，如果没有tree命令则需要使用yum安装该软件
+
+
+
+root@control ansible]# vim  ~/ansible/roles/issue/templates/issue.j2
+This is the system {{ansible_hostname}}
+Today's date is:{{ansible_date_time.date}}
+Contact to {{ admin }}
+#在templates子目录下创建一个文件，文件名为issue.j2(文件名可以任意)
+#文件的内容包含常量和变量,ansible_hostname和ansible_date_time.date是自带的Facts变量
+#admin是自定义的变量.
+
+[root@control ansible]# vim ~/ansible/roles/issue/vars/main.yml
+---
+# vars file for /root/ansible/roles/issue
+admin: yoyo@tedu.cn
+
+
+[root@control ansible]# vim ~/ansible/roles/issue/tasks/main.yml
+---
+# tasks file for /root/ansible/roles/issue
+-  name: delever issue file
+   template:
+     src: issue.j2
+     dest: /etc/issue
+
+
+
+[root@control ansible]# vim  ~/ansible/issue.yml
+---
+- hosts: test
+  roles:
+    - issue
+  # - role2              #支持加载多个role
+
+
+
+
+##################################
+在主配置文件中指定role角色的路径
+##################################
+[root@control ansible]# vim  ~/ansible/ansible.cfg
+[defaults]
+remote_user = root
+inventory = ./inventory
+roles_path = ./roles              #指定存放role的路径(相对或者绝对路径)
+[privilege_escalation]
+become=True
+become_method=sudo
+become_user=root
+become_ask_pass=False
+
+
+
+
+
+公共Roles仓库(https://galaxy.ansible.com)管理。
+[root@control ansible]# ansible-galaxy  search 'httpd'
+#联网搜索roles
+[root@control ansible]# ansible-galaxy info acandid.httpd
+#查看roles基本信息
+[root@control ansible]# ansible-galaxy install acandid.httpd -p ~/ansible/roles/
+#下载roles到特定的目录
+[root@control ansible]# ansible-galaxy list  -p  roles/
+#列出本地有哪些roles
+
+
+
+
+使用ansible-galaxy install可以直接下载Role，也可以编写requirements.yml文件下载Role。
+[root@control ansible]# cat ~/ansible/roles/requirements.yml
+#格式一：直接从Ansible Galaxy官网下载
+- src: acandid.httpd
+#格式二：从某个git服务器下载
+- src: http://gitlab.com/xxx/xxx.git
+  scm: git
+  version: 56e00a54
+  name: nginx-acme
+#格式三：下载tar包，支持http、https、file
+- src:  http://example.com/myrole.tar
+  name:  myrole
+[root@control ansible]# ansible-galaxy install -r roles/requirements.yml -p roles
+
+
+
+
+
+【综合项目】参考tmooc案例素材。
+主机名称	IP地址	角色
+control	192.168.4.253	控制节点（manager）
+node1	192.168.4.11	被控制节点（test）
+node2	192.168.4.12	被控制节点（proxy）
+node3	192.168.4.13	被控制节点（web1）
+node4	192.168.4.14	被控制节点（web2）
+node5	192.168.4.15	被控制节点（database）
+
+步骤一：部署两台后端LNP服务器（没有mariadb）
+1）创建role角色
+[root@control ansible]# ansible-galaxy  init  ~/ansible/roles/lnmp
+2）准备2台LNP动态网站的素材
+拷贝Nginx源码包，编写一个源码编译安装nginx的shell脚本。
+[root@control ansible]# cp  lnmp_soft/nginx-1.17.6.tar.gz  \
+~/ansible/roles/lnmp/files/
+[root@control ansible]# vim ~/ansible/roles/lnmp/files/nginx_install.sh
+#!/bin/bash
+yum -y install gcc pcre-devel openssl-devel make
+cd /tmp
+tar -xf /tmp/nginx-1.17.6.tar.gz
+cd nginx-1.17.6
+./configure --with-http_ssl_module
+make
+make install
+新建一个Nginx配置文件模板。
+[root@control ansible]# vim ~/ansible/roles/lnmp/files/nginx.conf
+#user  nobody;
+worker_processes  2;
+#error_log  logs/error.log;
+events {
+    worker_connections  65535;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+    #                  '$status $body_bytes_sent "$http_referer" '
+    #                  '"$http_user_agent" "$http_x_forwarded_for"';
+    sendfile        on;
+    tcp_nopush     on;
+    keepalive_timeout  65;
+    #gzip  on;
+
+    server {
+        listen       80;
+        server_name  localhost;
+        location / {
+            root   html;
+            index  index.html index.htm;
+        }
+        error_page  404              /404.html;
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+        # pass the PHP scripts to FastCGI server listening on 127.0.0.1:9000
+        location ~ \.php$ {
+            root           html;
+            fastcgi_pass   127.0.0.1:9000;
+            fastcgi_index  index.php;
+            include        fastcgi.conf;
+        }
+    }
+}
+准备测试首页文件模板。
+[root@control ansible]# vim ~/ansible/roles/lnmp/templates/index.html
+Welcom to {{ansible_hostname}} on {{ ansible_eth0.ipv4.address }}.
+#注意网卡名称根据实际情况填写。
+2）修改role配置文件。
+[root@control ansible]# vim roles/lnmp/tasks/main.yml
+---
+- name: copy nginx-1.17.6.tar.gz to webserver.
+  copy:
+    src: nginx-1.17.6.tar.gz
+    dest: /tmp/
+#拷贝源码包软件
+- name: install nginx through shell script.
+  script: nginx_install.sh
+  args:
+    creates: /usr/local/nginx/sbin/nginx
+#执行源码编译安装脚本，如果已经安装nginx，则不再执行安装脚本.
+
+- name: copy nginx.conf to destination host.
+  copy:
+    src: nginx.conf
+    dest: /usr/local/nginx/conf/nginx.conf
+
+- name: copy index.html to destination host.
+  template:
+    src: index.html
+    dest: /usr/local/nginx/html/index.html
+
+- name: install php
+  yum:
+    name:
+      - php
+      - php-fpm
+      - php-mysqlnd                          #rhel8中使用php-mysqlnd替代了php-mysql
+      - mariadb-devel
+
+- name: run all service.
+  block:
+    - service:
+        name: php-fpm
+        state: started
+- shell: /usr/local/nginx/sbin/nginx
+  args:
+    creates: /usr/local/nginx/logs/nginx.pid
+#nginx.pid存在，说明nginx已经启动。如果该文件存在，则不再启动nginx。
+3）编写Playbook调用role，并执行Playbook。
+[root@control ansible]# vim lnmp.yml
+---
+- hosts: webserver
+  roles:
+    - lnmp
+[root@control ansible]# ansible-playbook lnmp.yml
+步骤二：部署nginx代理服务器
+1）创建role角色
+[root@control ansible]# ansible-galaxy  init  ~/ansible/roles/proxy
+2）准备代理服务器需要的素材
+拷贝Nginx源码包，编写一个源码编译安装nginx的shell脚本。
+[root@control ansible]# cp  lnmp_soft/nginx-1.17.6.tar.gz  \
+~/ansible/roles/proxy/files/
+[root@control ansible]# vim ~/ansible/roles/proxy/files/nginx_install.sh
+#!/bin/bash
+yum -y install gcc pcre-devel openssl-devel make
+cd /tmp
+tar -xf /tmp/nginx-1.17.6.tar.gz
+cd nginx-1.17.6
+./configure --with-http_ssl_module
+make
+make install
+新建一个Nginx代理服务器的配置文件模板。
+[root@control ansible]# vim ~/ansible/roles/proxy/files/nginx.conf
+#user  nobody;
+worker_processes  2;
+#error_log  logs/error.log;
+events {
+    worker_connections  65535;
+}
+
+http {
+    include       mime.types;
+    default_type  application/octet-stream;
+    #log_format  main  '$remote_addr - $remote_user [$time_local] "$request" '
+    #                  '$status $body_bytes_sent "$http_referer" '
+    #                  '"$http_user_agent" "$http_x_forwarded_for"';
+    sendfile        on;
+    tcp_nopush     on;
+    keepalive_timeout  65;
+    #gzip  on;
+upstream webs {
+   server 192.168.4.13;
+   server 192.168.4.14;
+}
+    server {
+        listen       80;
+        server_name  localhost;
+        location / {
+            proxy_pass http://webs;
+            root   html;
+            index  index.html index.htm;
+        }
+        error_page  404              /404.html;
+        error_page   500 502 503 504  /50x.html;
+        location = /50x.html {
+            root   html;
+        }
+    }
+}
+3）修改role配置文件。
+[root@control ansible]# vim roles/proxy/tasks/main.yml
+---
+- name: copy nginx-1.17.6.tar.gz to proxy.
+  copy:
+    src: nginx-1.17.6.tar.gz
+    dest: /tmp/
+#拷贝源码包软件
+- name: install nginx through shell script.
+  script: nginx_install.sh
+  args:
+    creates: /usr/local/nginx/sbin/nginx
+#执行源码编译安装脚本，如果已经安装nginx，则不再执行安装脚本.
+
+- name: copy nginx.conf to destination host.
+  copy:
+    src: nginx.conf
+    dest: /usr/local/nginx/conf/nginx.conf
+
+- name: run nginx service.
+  shell: /usr/local/nginx/sbin/nginx
+  args:
+    creates: /usr/local/nginx/logs/nginx.pid
+#nginx.pid存在，说明nginx已经启动。如果该文件存在，则不再启动nginx。
+4）编写Playbook调用role,并执行Playbook。
+[root@control ansible]# vim proxy.yml
+---
+- hosts: proxy
+  roles:
+    - proxy
+
+[root@control ansible]# ansible-playbook proxy.yml
+步骤三：部署数据库
+[root@control ansible]# vim mariadb.yml
+---
+- hosts: database
+  tasks:
+    - name: install mariadb server
+      yum:
+        name:
+          - mariadb
+          - mariadb-server
+          - mariadb-devel
+    - name: run mariadb service
+      service:
+        name: mariadb
+        state: started
+
+[root@control ansible]# ansible-playbook mariadb.yml

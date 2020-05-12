@@ -1,0 +1,35 @@
+
+
+硬件视频
+1.配置RAID
+2.配置远程管理卡
+  1)串口重定向
+  2)给远程控制卡配置IP,用户和密码
+  3)笔记本安装远程管理软件包(执行命令远程管理)
+
+做动态网站：
+部署LNMP环境+代码上线服务器
+ 1) 部署LNMP环境
+    nginx,mariadb,php
+    vim nginx.conf
+    location / {
+       root html;
+       index index.php index.html;
+    }
+    location ~ \.php {
+       root html;
+       fastcgi_pass 127.0.0.1:9000;
+       include fastcgi.conf;
+    }
+    启动所有服务;设置开机启动
+ 2)提前准备数据库
+ mysql> create database wordpress character set utf8mb4;
+ mysql> grant all on wordpress.* to 'wordpress'@'localhost' identified by 'wordpress';
+
+ 3)拷贝PHP代码(wordpress)到/usr/local/nginx/html/
+
+ 4)真机访问firefox  http://服务器IP
+    因为写wordpress代码的人无法预知未来数据库在哪里,IP是什么,用户和密码是什么.
+    写代码的时候先在代码中【定义变量】
+    第一次访问网页的时候做初始化(告诉wordpress数据库的信息)
+ 5)登陆wordpress后台修改网站页面的样式.

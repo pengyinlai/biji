@@ -1,0 +1,252 @@
+
+
+Keepalived三个模块功能:
+1)VRRP(虚拟路由热备协议)
+2)自动配置LVS规则
+3)健康检查
+
+
+【实验一：使用keepalived通过VRRP实现两台web服务器的高可用】
+提示:VRRP是热备功能,不是负载均衡.
+
+						  |web1(192.168.4.100)
+client---------->VIP------
+			192.168.4.80  |web2(192.168.4.200)
+
+
+	【准备环境】
+	[配置web1和web2]
+	1)配置正常IP#不能照抄网卡名称
+	[root@web1 ~]# nmcli connection modify ens33 ipv4.method manual ipv4.addresses 192.168.4.100/24 autoconnect yes
+	[root@web1 ~]# nmcli connection up ens33
+	[root@web1 ~]# systemctl start httpd
+	[root@web1 ~]# echo "192.168.4.100" > /var/www/html/index.html
+
+	[root@web2 ~]# nmcli connection modify ens33 ipv4.method manual ipv4.addresses 192.168.4.200/24 autoconnect yes
+	[root@web2 ~]# nmcli connection up ens33
+	[root@web2 ~]# systemctl start httpd
+	[root@web2 ~]# echo "192.168.4.200" > /var/www/html/index.html
+
+
+	【通过keepalived实现VRRP双机热备】
+	[root@web1 ~]# yum -y install keepalived.x86_64
+	[root@web2 ~]# yum -y install keepalived.x86_64
+
+	[root@web1 ~]# vim /etc/keepalived/keepalived.conf
+	router_id web1			#12行设置设备的ID号(任意字符串即可)
+	vrrp_iptables			#13行手动插入该内容
+	(清除防火墙的drop规则,
+	默认keepalived会自动让防火墙中添加Drop规则)
+	state  MASTER			#21行(MASTER|BACKUP)[这里不需要修改]
+	interface ens33			#22行,给哪个网卡配置VIP
+	(网卡名称不能照抄,需要使用ip a s查看自己的网卡名称)
+	virtual_router_id 51	#23行,VRID[主备必须一致][不需要修改]
+	priority 100			#24行,优先级100[不需要修改]
+	#30、31、32行内容修改如下(配置VIP):
+	virtual_ipaddress {
+        192.168.4.80
+    }
+	35行以及后面的所有内容全部删除(从virtual_server开始999dd)
+	[root@web1 ~]# systemctl start keepalived.service
+	[root@web1 ~]# ip a  s			#查看VIP效果
+
+	[root@web1 ~]# scp /etc/keepalived/keepalived.conf 192.168.4.200:/etc/keepalived/
+
+	+++++++++++++++++++++++++++++++++++++++++++++++++++++
+	[root@web2 ~]# vim /etc/keepalived/keepalived.conf
+	router_id web2			#12行设置设备的ID号
+	state BACKUP			#21行,备用服务器
+	interface ens33			#22行,网卡名称不能照抄(需要查)
+	priority 50				#24行,优先级50
+	#备注:下面的VIP已经在web1主机修改完成.
+	[root@web2 ~]# systemctl start keepalived.service
+	[root@web2 ~]# ip a  s			#查看VIP效果,默认没有VIP
+
+	#备注:将web1关机后,web2就会获得VIP.
+	练习时间
+
+
+
+【实验二：keepalived+LVS】
+
+				   proxy(主)			|web1
+client------->VIP 	        --------
+				   proxy2(备)			|web2
+
+	【环境准备】
+	proxy主机的IP:192.168.4.5/24
+	proxy2主机的IP:192.168.4.6/24	(新建一台虚拟机)
+	web1主机的IP:192.168.4.100/24
+	web2主机的IP:192.168.4.200/24
+	#备注:我们需要做的是LVS-DR实验,所以web1和web2需要伪装VIP
+	#这个只要确保第一天课程LVS-DR的实验环境依然存在即可.
+
+	#【警告】实验二和实验一有冲突！！
+	#做实验二前一定要把web1和web2的keepalived关闭!!!!
+
+	#这个实验我们使用keepalived实现两台调度器的热备
+	#两台调度器的VIP是192.168.4.15
+
+
+	【配置proxy主机的keepalived】
+	[root@proxy ~]#  yum -y install keepalived
+	[root@proxy2 ~]# yum -y install keepalived
+
+	[root@proxy ~]# vim /etc/keepalived/keepalived.conf
+	router_id LVS1		#12行设置设备的ID号
+	vrrp_iptables		#13行手动插入该内容
+	interface ens34		#22行(需要使用ip a s查看下4网段的网卡名)
+	30,31,32行内容修改如下:
+	virtual_ipaddress {
+        192.168.4.15
+    }
+	#35行往下的内容,修改后效果如下:
+	virtual_server 192.168.4.15 80 {
+	delay_loop 6
+    lb_algo rr					#调度算法RR轮询
+    lb_kind DR					#工作模式DR
+    persistence_timeout 50		#【一定删除这一行】保持连接50秒
+    protocol TCP				#协议TCP
+		real_server 192.168.4.100 80 {	#后端真实服务器
+			weight 1					#权重
+			TCP_CHECK {					#健康检查
+				connect_timeout 3		#健康检查的超时时间3秒
+				nb_get_retry 3			#健康检查的重试次数3次
+				delay_before_retry 3	#健康检查的间隔时间3秒
+			}
+		}
+		real_server 192.168.4.200 80 {
+			weight 1
+			TCP_CHECK {
+				connect_timeout 3
+				nb_get_retry 3
+				delay_before_retry 3
+			}
+		}
+	}
+	ESC,:wq保存退出编辑器
+
+	[root@proxy ~]# rm -rf /etc/sysconfig/network-scripts/ifcfg-ens34:0
+	把Day01这天LVS-DR实验所做的VIP删除(网卡名称不能照抄)
+	[root@proxy ~]# systemctl restart network
+
+	[root@proxy ~]# ipvsadm -C
+	[root@proxy ~]# systemctl restart keepalived
+	[root@proxy ~]# ip a s				#查看VIP
+	[root@proxy ~]# ipvsadm -Ln			#查看LVS
+
+
+
+
+	[root@proxy ~]# scp /etc/keepalived/keepalived.conf 192.168.4.6:/etc/keepalived/
+
+	备用服务器4.6上面,只需要修改VRRP的配置即可.
+	[root@proxy2 ~]# vim /etc/keepalived/keepalived.conf
+	router_id LVS2		#12行设置设备的ID号
+	state BACKUP		#21行
+	interface ens34		#22行,需要通过ip a s查看下4网段的网卡名
+	priority 50			#24行
+	[root@proxy2 ~]# systemctl restart keepalived
+	[root@proxy2 ~]# yum -y install ipvsadm
+	[root@proxy2 ~]# ipvsadm  -Ln
+	#可以查看到LVS集群规则
+	[root@proxy2 ~]# ip a s ens34
+	#默认看不到VIP,当主服务器宕机时VIP会自动漂移过来.
+	补充:
+	proxy2关闭防火墙和SELinux
+	[root@proxy2 ~]# firewall-cmd --set-default-zone=trusted
+	[root@proxy2 ~]# sed -i  '/SELINUX/s/enforcing/permissive/' /etc/selinux/config
+	[root@proxy2 ~]# setenforce  0
+
+
+
+
+
+【实验三：HAproxy代理服务器】
+HAProxy软件与Nginx是一致的，原理也一样，都是代理服务器软件.
+
+LVS:4层调度,仅关心TCP|UDP和端口
+HAproxy和Nginx既可以做4层代理也可以做7层代理
+
+性能:LVS>HAproxy>Nginx
+功能:Nginx>HAproxy>LVS
+
+	【准备环境：把前面的实验删除】
+	1)把两台LVS主机的keepalived服务关闭
+	[root@proxy ~]#  systemctl stop keepalived
+	[root@proxy2 ~]# systemctl stop keepalived
+	2)把web1和web2的伪装IP删除
+	[root@web1 ~]# rm -rf  /etc/sysconfig/network-scripts/ifcfg-lo:0
+	[root@web1 ~]# systemctl restart network
+
+	[root@web2 ~]# rm -rf /etc/sysconfig/network-scripts/ifcfg-lo:0
+	[root@web2 ~]# systemctl restart network
+
+
+
+
+	【在192.168.4.5主机配置haproxy服务】
+	[root@proxy ~]# yum -y install haproxy
+	[root@proxy ~]# vim +86 /etc/haproxy/haproxy.cfg
+	#在文件的末尾手动添加如下内容:
+	listen servers *:80
+	#servers可以是任意字符,*代表所有IP(或者0.0.0.0)
+	balance  roundrobin				#算法是轮询
+	server web1  192.168.4.100:80 check
+	server web2  192.168.4.200:80 check
+	[root@proxy ~]# systemctl start haproxy
+	【注意事项：一定确保本机没有任何其他服务使用80端口】
+    【注意事项：一定确保SELinux是关闭的】
+
+
+	【备注】
+	确保web1和web2的网络是可以通信的
+	确保web1和web2的httpd服务是启动
+
+	【备注haproxy的配置文件说明】
+	balance  roundrobin
+	#该参数代表算法,参考baidu
+	或/usr/share/doc/haproxy-1.5.18/configuration.txt帮助(1584行)
+	server web1  192.168.4.100:80 weight 2 check rise 5  fall 3
+	#server配置后端真实服务器,web1这个名称可以任意
+	#后端服务器IP和端口是192.168.4.100:80
+	#check是健康检查
+	#fall 3代表最大失败次数(几次测试失败算失败)
+	#rise 5代表最大成功次数(几次测试成功算成功)
+	#weight 2代表权重
+
+
+	【继续修改配置，开启haproxy的状态页面】
+	[root@proxy ~]# vim /etc/haproxy/haproxy.cfg
+	在文件的末尾手动添加如下内容:
+	listen stats 0.0.0.0:1080   	#监听端口(任意端口)
+    stats refresh 30s   			#统计页面自动刷新时间,任意时间
+    stats uri /stats   				#统计页面url(任意字符)
+    stats realm Haproxy Manager 	#进入管理解面查看状态信息
+    stats auth admin:admin  		#统计页面用户名和密码设置,任意
+	[root@proxy ~]# systemctl restart haproxy
+	[root@proxy ~]# ss -ntulp |grep haproxy
+
+
+
+	客户端浏览器访问http://192.168.4.5:1080/stats
+		用户名:admin,密码:admin
+
+Queue队列数据的信息（当前队列数量，最大值，队列限制数量）；
+Session rate每秒会话率（当前值，最大值，限制数量）；
+Sessions总会话量（当前值，最大值，总量，Lbtot: total number of times a server was selected选中一台服务器所用的总时间）；
+Bytes（入站、出站流量）；
+Denied（拒绝请求、拒绝回应）；
+Errors（错误请求、错误连接、错误回应）；
+Warnings（重新尝试警告retry、重新连接redispatches）；
+Server(状态、最后检查的时间（多久前执行的最后一次检查）、权重、备份服务器数量、down机服务器数量、down机时长)。
+
+
+
+
+扩展:
+IP对应的是主机,端口对应服务.
+不同的主机不能IP冲突,不同的服务不能端口冲突.
+不允许两个或多个服务同时占用相同的一个端口.
+一台主机可以配置多个IP(前提是不能冲突)
+一个服务也可以占用多个端口(前提是不能冲突)
