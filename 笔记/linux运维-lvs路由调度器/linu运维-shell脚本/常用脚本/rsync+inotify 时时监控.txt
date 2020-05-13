@@ -1,0 +1,11 @@
+[root@svr7 ~]# vim  /root/isync.sh
+#!/bin/bash		
+FROM_DIR="/var/www/html/"		
+# 定义变量      
+RSYNC_CMD="rsync  -az  --delete  $FROM_DIR  root@192.168.4.207:/var/www/html"
+# 定义变量执行同步命令
+while  inotifywait  -rqq  -e  modify,move,create,delete,attrib  $FROM_DIR 
+# 监视目录 执行成功就循环后边的命令
+do
+    $RSYNC_CMD
+done  &
