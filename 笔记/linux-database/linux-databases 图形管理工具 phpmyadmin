@@ -1,0 +1,14 @@
+phpmyadmin  图名mysql数据库管理工具
+
+装包 yum -y install httpd php php-mysql
+启服务 systemctl start httpd
+systemctl enabled httpd
+
+解包 tar -zxvf phpMyAdmin-2.11.11-all-languages.tar.gz
+mv phpMyAdmin-2.11.11-all-languages /var/www/html/phpmyadmin 
+（移动软件包到 web的根路径）
+cp config.sample.inc.php config.inc.php   //创建配置文件
+
+vim config.inc.php  				
+17 $cfg['blowfish_secret']='plj123'     //cookies参数
+31 $cfg['servers'][$i]['host'] = 'loacahost'   //数据库服务器IP地址
