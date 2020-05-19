@@ -1,0 +1,995 @@
+
+ansible 应用
+01. 【安装和配置ansible环境】
+    Ansible是一款简洁、高效的运维自动化工具。只需要将ansible安装在主控机器上，就可以通过SSH协议实现针对大量受管服务器的批量化、剧本化的管理。
+
+1）ansible安装
+软件包：ansible、sshpass、python3-jinja2、python3-pyramiko等
+# yum  -y  install  ansible   //装包
+# ansible --version     //确认版本相关信息
+
+2）ansible环境配置文件
+全局配置：/etc/ansible/ansible.cfg
+默认主机清单：/etc/ansible/hosts 	//存放受管主机列表
+默认角色目录：/etc/ansible/roles 	//存放预设的各种任务角色资料
+默认用户身份：root
+扩展配置：
+ ~/.ansible.cfg  		//用户配置，会覆盖全局配置
+ ./ansible.cfg  		//工作目录配置（本文采用这种配置方式），会覆盖全局、用户配置
+	
+3）sudo提权设置
+受管机接受控制的方式：
+++ a. 受管机提供root用户+密码
+++ b. 受管机提供已授sudo特权的普通用户（比如alice）
+# visudo
+alice   ALL=(ALL)       NOPASSWD:ALL
+
+
+主控机常规设置（可以添加同名sudo授权用户）：
+[alice@control ~]$ mkdir  ansible &&  cd  ansible
+[alice@control ansible]$ vim  ansible.cfg     //内容可参考全局配置文件
+[defaults]
+inventory = inventory       //主机清单文件名
+remote_user = alice         //连接受管机的远程用户名
+roles_path = roles         //角色目录名
+[privilege_escalation]       //设置用户 sudo 提权
+become=True         //自动提权
+become_method=sudo       //提权方式
+become_user=root         //提权目标用户
+become_ask_pass=False       //无需密码
+
+
+4）主机清单（inventory）
+主机清单的作用：
+    ++ 为接受ansible管理的大批量主机设置地址列表、分组
+    ++ 清单地址 localhost 表示本机，无需定义
+    ++ 清单地址 all 表示清单中所有主机，也无需定义
+
+主机清单地址的一般写法：
+[alice@control ansible]$ vim  inventory   //创建清单文件   
+172.25.254.101       //可以指定单个IP
+172.25.254.102
+172.25.254.[103:105]     //可以指定IP地址范围
+[websvrs]       //可以定义分组websvrs
+web1.example.com      //可以指定单个可查询的FQDN名称
+node1       //也可以指定主机别名（/etc/hosts中映射的地址）
+[dbsvrs]       //可以定义分组dbsvrs
+db1.example.com
+db2.example.com
+db3  ansible_ssh_host=192.168.1.3   ansible_ssh_port=2222      //适用于非标主机
+db4  ansible_ssh_user="zhsan"  ansible_ssh_pass="1234567"     //适用于非标用户
+[tedu:children]     //组tedu可以包含其他组（websvrs、dbsvrs）
+websvrs
+dbsvrs
+
+
+[alice@control ~]$ ansible all --list-hosts   //列出所有可控主机
+.. ..
+
+02. 【创建和运行Ansible临时命令】
+1）ansible管理方式（adhoc、playbook）
+++ adhoc方式：直接使用ansible命令，调用xx模块来完成远程运维任务（类似于手动执行Linux命令）
+++ playbook方式：提前写好任务剧本，需要由ansible-playbook工具加载批量执行（类似于使用Shell脚本）
+
+++ adhoc方式基本用法：
+# ansible  清单主机地址列表  -m  模块名  [-a  '任务参数']
+比如：
+[alice@control ansible]$ ansible  localhost  -m ping   //检测对本机的可控性（应返回pong）
+[alice@control ansible]$ ansible  all  -m ping     //检测对所有清单主机的可控性
+[alice@control ansible]$ ansible  websvrs  -m ping    //检测对websvrs组内各主机的可控性
+[alice@control ansible]$ ansible  node1,node5  -m ping   //检测node1和node2的可控性
+[alice@control ansible]$ ansible  node*  -m ping     //检测node开头的主机的可控性
+[alice@control ansible]$ ansible  websvrs[0]  -m ping   //检测websvrs组中第1个主机的可控
+
+
+2）使用万能command/shell模块，推送命令行
+++ command模块：缺省模块，向受管主机发送简单命令行，不支持管道/重定向/通配符等高级特性
+++ shell模块：向受管主机发送复杂命令行，支持管道/重定向/通配符等特性
+++ script模块：将本地的脚本拷贝到远程主机执行
+比如：
+[alice@control ansible]$ ansible  node1  -a  'ip  add  list  eth0'   //查看node1的IP地址
+[alice@control ansible]$ ansible  -m  command  node1  -a  'ip  add  list  eth0'   //查看node1的IP地址
+[alice@control ansible]$ ansible  -m  shell  node1  -a  'echo  hello  >  /root/a.file'    //在node1上创建一个文件
+[alice@control ansible]$ ansible  node1  -a  'cat  /root/a.file'      //查看node1上的文件内容
+[alice@control ansible]$ cat  aa.sh
+#!/bin/bash
+echo "Welcome to $(hostname)"
+[alice@control ansible]$ ansible  node1  -m script  -a  './aa.sh'     //将./aa.sh文件拷贝到受控机运行
+node1 | CHANGED => {
+    "changed": true,
+    "rc": 0,
+    "stderr": "Shared connection to node1 closed.\r\n",
+    "stderr_lines": [
+        "Shared connection to node1 closed."
+    ],
+    "stdout": "Welcome to node1\r\n",
+    "stdout_lines": [
+        "Welcome to node1"
+    ]
+}
+
+3）简单Shell脚本
+什么是Shell脚本：
+    ++ 包含一批按顺序执行的Linux命令行的文件，添加x权限后可以批量执行
+比如：
+[alice@control ansible]$ vim  test.sh     //创建脚本文件
+#!/bin/bash           // sha-bang标记表明执行环境（非必须）
+echo  "i love ansible"       //测试用的脚本语句（命令行）
+[alice@control ansible]$ chmod  +x  test.sh   //添加可执行权限
+[alice@control ansible]$ ./test.sh     //通过文件路径执行脚本
+i love ansible         //运行结果
+
+
+4）使用yum_repository模块，配置软件源
+基本用法：
+# ansible  清单主机  -m  yum_repository  [-a  '任务参数']
+    ++ file="文件名"  		//指定新生成的yum源配置文件名（不含 .repo 后缀的部分）
+    ++ name="源ID" 		//如果省略file，则文件名使用name的名称
+    ++ description="源的描述"
+    ++ baseurl="源的URL访问地址"
+    ++ gpgcheck="yes|no" 	//是否开启签名检查
+    ++ gpgkey="软件签名密钥文件地址" 
+比如：
+[alice@control ansible]$ ansible  node1  -m  yum_repository  -a  'name=BASE  description="software  base" baseurl=http://study.lab0.example.com/rhel8/BaseOS  gpgcheck=no'       //创建yum配置
+[alice@control ansible]$ ansible  node1  -m  shell  -a  'cat  /etc/yum.repos.d/B*.repo'    //检查结果
+
+5）通过ansible-doc获取模块帮助
+[alice@control ansible]$ ansible-doc  -l       //列出所有可用模块
+[alice@control ansible]$ ansible-doc  -l  |  grep  yum    //列出名称包含yum的模块
+[alice@control ansible]$ ansible-doc  yum_repository    //查看yum_repository模块的说明文档
+.. ..
+EXAMPLES:           //各模块文档都有剧本应用示范
+- name: Add repository
+  yum_repository:
+    name: epel
+    description: EPEL YUM repo
+    baseurl: https://download.fedoraproject.org/pub/epel/$releasever/$basearch/
+.. ..
+
+03. 编写剧本远程安装软件
+1）playbook剧本的作用及语法构成
+什么是剧本：
+    ++ 即playbook，因作用类似于拍电影的剧本而得名，也有翻译为“编排”的
+    ++ 指的是包含一系列ansible自动化运维任务操作的特殊文件，一般以 .yml 作为扩展名
+    ++ 剧本代码使用YAML（YAML Ain't a Markup Language）数据标记规则
+
+YAML基本语法：
+    ++ # 表示注释，起始行标记 --- ，结束行标记 ... ，非必需
+    ++ 以2个或更多空格缩进来确定层次关系，相同层次的代码缩进必须对齐
+    ++ 代码文件以 .yml 或 .yaml 作为扩展名
+    ++ 代码中不能使用Tab标记，建议调整编辑器设置（自动缩进、Tab替换为空格）
+比如：
+[alice@control ansible]$ vim  ~/.vimrc     //修改vim个性化配置（" 是注释行标记）
+"autocmd FileType yaml setlocal autoindent shiftwidth=2 tabstop=2 expandtab
+au FileType yaml set ai sw=2 ts=2 et
+
+    ++ 键值对使用 : 分隔，列表/数组使用 - ，后面必须有空格标记
+    ++ 键值对可以写成一行、缩进的多行
+比如，以下两种写法等效：
+    name: tom
+与
+    name: 
+        tom
+
+再比如，以下两种写法也等效：
+    students: [tom, jerry]
+与
+    students: 
+        - tom
+        - jerry
+    ++ 跨行文本通过 > 表示（合并为一行处理），或 | 标记（作为多行文本处理）
+比如：
+    decription: >
+        The Apache HTTP Server is a powerful
+        web server.
+或
+    decription: |
+        The Apache HTTP Server is a powerful
+        web server.
+
+剧本的语法构成：
+    ++ 每一个剧本中可以包括多个任务
+    ++ 每一个剧情由以下组件构成：name、hosts、tasks、vars、roles等等
+          名称（name），此项剧情的描述
+          清单主机（hosts），在哪些主机上执行
+          任务列表（tasks），需要执行的具体的模块操作
+          变量列表/文件（vars，vars_files），定义变量或导入变量文件
+          角色（roles），加载预设的任务角色
+比如：
+[alice@control ansible]$ vim  first.yml
+# 第一个测试剧本         //注释文本
+---            //起始行标记 --- ，非必需
+- name: my first playbook       //剧情1的名称，方便观察执行过程，非必需
+  hosts: node1,node2        //设置要操作哪些主机
+  tasks:           //列出任务操作
+    - yum: pkg=net-tools  state=present     //任务1，调用yum模块安装net-tools软件包
+    - yum: pkg=bind-utils  state=present      //任务2，调用yum模块，安装bind-utils软件包
+    - name: install vim       //如果需要，每一个任务操作都可以指定名称
+      yum: pkg=vim-enhanced  state=present     //任务3，调用yum模块安装vim-enhanced软件包
+...           //结束行标记 ... ，非必需
+
+2）执行playbook剧本
+    ++ 通过ansible-playbook加载剧本，任务按顺序依次执行
+    ++ 添加 -C 选项时，只测试剧本，不真正执行
+    ++ 返回结果时，changed表示有更改（橙色），ok表示已经执行过（绿色），failed表示失败（红色）
+比如：
+[alice@control ansible]$ ansible-playbook  first.yml 
+PLAY [my first playbook] *******************************************************
+TASK [Gathering Facts] *********************************************************
+ok: [node1]
+ok: [node2]
+TASK [yum] *********************************************************************
+changed: [node1]
+changed: [node2]
+TASK [yum] *********************************************************************
+changed: [node2]
+changed: [node1]
+TASK [install vim] *************************************************************
+changed: [node1]
+changed: [node2]
+PLAY RECAP *********************************************************************
+node1                      : ok=4    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+node2                      : ok=4    changed=3    unreachable=0    failed=0    skipped=0    rescued=0    ignored=0   
+[alice@control ansible]$
+
+3）使用yum或dnf模块，管理软件包
+基本用法：
+# ansible  清单主机  -m  yum  [-a  '任务参数']
+    ++ name="xxx"  		//名为 xxx 的软件包（pkg与name等效）
+    ++ name="@yyy"  	//名为 yyy 的软件组
+    ++ name="*"  		//任意/所有软件
+    ++ state="present|installed" 	//安装软件（present与installed等效）
+    ++ state="absent|removed" 	//卸载软件（absent与removed等效）
+    ++ state="latest" 		//升级到最新版
+比如：
+[alice@control ansible]$ ansible  node1  -m  yum  -a 'name=httpd  state=present'  //装httpd包
+[alice@control ansible]$ ansible  node1  -a  'yum  list  httpd'      //检查结果
+.. .. 
+Installed Packages
+httpd.x86_64             2.4.37-10.module+el8+2764+7127e69e              @STREAM
+
+
+++ 安装并使用系统角色；
+++ 通过galaxy安装并使用角色；
+++ 创建及使用自定义角色；
+++ 编写剧本远程管理逻辑卷。
+
+######## ######## ######## ######## 
+
+04. 安装并使用系统角色
+1）变量的作用及定义、调用方法
+什么是变量：
+    ++ 通过固定的名称来调用可能变化的值，方便ansible重复调用以提高管理效率
+    ++ 采用 key=value，或者 key: value 的方式定义
+    ++ 调用时一般采用 {{key}} 方式
+变量的领域：
+    ++ 清单变量：在inventory清单主机中定义，作用于某个主机或某个主机组
+    ++ 剧本变量：在playbook剧本中定义，只在当前剧本中有效
+    ++ 系统变量：通过剧本的gather_facts=yes自动搜集（默认调用setup模块），对任务主机有效
+    ++ 魔法变量：由ansible预设，用来获取清单组、清单主机名等管理信息
+
+2）主机信息搜集（gather_facts: yes）
+    Ansible每次执行playbook剧本时，默认第一个任务就是Gathering Facts搜集主机信息。
+所有收集到的系统信息都被保存在ansible_facts指标变量中，可以通过setup模块查看，或者在playbook剧本中调用。
+
+3）使用setup模块，过滤出清单主机的系统指标
+基本用法：
+# ansible  清单主机  -m  setup  [-a  'filter=系统指标名']
+    ++ filter参数用来过滤出特定名称的系统指标
+    ++ 未知指标名部分可以使用 * 通配符
+比如：
+[alice@control ansible]$ ansible  node1  -m  setup    //查看node1的所有系统指标
+node1 | SUCCESS => {
+    "ansible_facts": {
+        "ansible_all_ipv4_addresses": [
+            "172.25.254.101"
+        ],
+        "ansible_all_ipv6_addresses": [
+            "fe80::6a52:a669:ccc3:13cc"
+        ],
+        "ansible_apparmor": {
+            "status": "disabled"
+        },
+.. ..
+[alice@control ansible]$ ansible  node1  -m  setup -a "filter=ansible_all_ipv4_addresses"
+.. ..         //查看指定名称的系统指标
+[alice@control ansible]$ ansible  node1  -m  setup -a "filter=*_ipv4_addresses"
+.. ..         //指定系统指标时，名称中允许使用通配符 * 
+
+常用系统指标：
+ansible_eth0 			//网卡eth0的配置信息
+ansible_fqdn 			//完整的主机名
+ansible_hostname 			//主机名
+ansible_all_ipv4_addresses		//系统IPv4地址列表
+ansible_bios_version 		//主机BIOS版本
+ansible_date_time 			//系统日期时间信息
+ansible_devices 			//硬件设备信息
+ansible_distribution 			//操作系统版本
+ansible_env 			//用户环境变量列表
+ansible_kernel 			//内核版本信息
+ansible_lvm 			//逻辑卷存储相关信息
+ansible_memtotal_mb 		//总的内存大小
+ansible_memfree_mb 		//空闲内存大小
+ansible_mounts 			//已挂载的文件系统信息
+ansible_interfaces 			//网络接口列表
+ansible_distribution  		//当前系统的发行版名称
+.. .. 
+
+4）使用debug模块，通过msg参数显示变量的内容、自定义文本
+    ++ 需要在playbook剧本中测试（adhoc方式未搜集信息，会提示变量未定义）
+    ++ 使用msg显示变量时，变量名需要加 {{ }} 括起来
+    ++ 使用var显示变量时，变量名无需 {{ }} 标记；var与msg不能同时使用
+比如：
+[alice@control ansible]$ cat  debug.yml        //编写测试剧本
+---
+- name: debug test
+  hosts: node1
+  tasks:
+    - debug: msg="{{ansible_all_ipv4_addresses}}"     //显示系统变量（调用方法1，推荐）
+    - debug: msg="{{ansible_facts.all_ipv4_addresses}}"   //显示系统变量（调用方法2）
+    - debug: msg="{{ansible_facts.devices.vda.size}}"   //查看xx变量的某项值
+    - debug: msg="FQDN: {{ansible_fqdn}}"     //查看完整主机名，可以添加自定义提示
+    - debug: msg="{{ansible_hostname}}"       //查看主机名
+    - debug: msg="{{ansible_eth0.ipv4.address}}"     //查看eth0的IP地址
+    - debug: msg="{{ansible_eth0.macaddress}}"     //查看eth0的MAC地址
+    - debug: msg="{{ansible_bios_version}}"     //查看主机BIOS版本
+    - debug: msg="{{ansible_devices.vda.size}}"     //查看磁盘vda的大小
+    - debug: msg="{{ansible_devices.vda.partitions.vda1.size}}"     //查看分区vda1的大小
+    - debug: msg="{{ansible_lvm.lvs.root.size_g}}"     //查看名为root的逻辑卷的大小（G）
+    - debug: msg="{{ansible_lvm.vgs.rhel.size_g}}"     //查看名为rhel的卷组的大小（G）
+    - debug: msg="{{ansible_kernel}}"       //查看内核版本
+    - debug: msg="{{ansible_eth0.ipv4.address}}"     //查看主机名
+
+
+[alice@control ansible]$ ansible-playbook debug.yml    //执行剧本
+
+5）ansible魔法变量
+    ++ 指的是ansible为管理目的而预设的特殊变量
+    ++ 通过adhoc方式或者playbook方式，都可以调用/或者msg查看
+常用魔法变量：
+hostvars  				//包含所有可控清单主机的魔法变量
+hostvars.node1  			//主机node1的魔法变量
+hostvars.node1.group_names 		//主机node1在清单中所在的组名
+group_names 			//当前主机所在的清单组名
+hostvars.node1.inventory_hostname	//主机node1在清单中的主机名
+inventory_hostname	 		//当前主机的清单主机名
+groups				//主控机清单中的所有主机组及成员主机信息
+groups.all 			//主控机清单中的所有主机
+groups.web 			//主控机清单中web组的所有主机
+
+6）在playbook中使用变量：
+    ++ 使用vars列表项定义
+比如：
+[alice@control ansible]$ cat  var.yml     //定义v1、v2两个变量
+---
+- name: vars test
+  hosts: node1
+  vars:        //直接定义变量
+    - yonghu: zhsan
+    - mima: ab1234
+  tasks:
+    - debug:
+        msg:  msg="username:{{yonghu}}, password:{{mima}}"
+...
+[alice@control ansible]$ ansible-playbook  var.yml     //测试剧本
+.. ..
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "username:zhsan, password:ab1234"
+}
+.. ..
+
+    ++ 使用vars_files列表项定义，从外部变量文件加载变量
+比如：
+[alice@control ansible]$ cat  vars_files.yml 
+---
+- name: vars_files test
+  hosts: node1
+  vars_files:       //调用变量文件
+    - v3v4.txt
+  tasks:
+    - debug: msg="username:{{yonghu}}, password:{{mima}}"
+...
+[alice@control ansible]$ ansible-playbook vars_files.yml 
+.. .. 
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "username:lisi, password:cd5678"
+}
+.. ..
+
+    ++ 使用vars_prompt从键盘输入变量值
+比如：
+[alice@control ansible]$ cat  vars_prompt.yml 
+---
+- name: vars_prompt test
+  hosts: node1
+  vars_prompt:     //人机交互为变量赋值
+    - name: ilogin
+      prompt: "login"
+      private: no     //回显  
+    - name: ipass
+      prompt: "password"
+      private: yes     //不回显（缺省）
+  tasks:
+    - name: create an user
+      user: name="{{ilogin}}" password="{{ ipass | password_hash('sha512') }}"
+...
+
+[alice@control ansible]$ ansible-playbook vars_prompt.yml   //执行剧本
+login: wangwu     //输入用户名
+password:      //输入密码（不显示）
+.. ..
+[alice@control ansible]$ ansible  node1  -a  'id  wangwu'   //检查结果
+node1 | CHANGED | rc=0 >>
+uid=1002(wangwu) gid=1004(wangwu) groups=1004(wangwu)
+
+    ++ 通过register模块保存命令结果（类似于Shell的重定向）
+[alice@control ansible]$ cat  register.yml
+---
+- name: register test
+  hosts: node1
+  ignore_errors: yes        //即使遇到错误，仍然执行后续操作
+  tasks:
+    - shell: ls -lh  /etc/hosts  /etc/null
+      register: result       //将屏幕输出保存到result变量
+    - debug: msg="{{result.stdout}}"   //提取标准输出
+    - debug: msg="{{result.stderr}}"   //提权标准错误
+    - debug: msg="{{result}}"     //提取变量result的所有内容
+...
+[alice@control ansible]$ ansible-playbook register.yml     //执行剧本
+.. ..
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "-rw-r--r--. 1 root root 617 Mar 27 19:10 /etc/hosts"
+}
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "ls: cannot access '/etc/null': No such file or directory"
+}
+.. ..
+
+7）ansible角色
+什么是角色：
+    ++ roles指的是，为了方便管理重复调用的大批量playbook剧本，而定义的一套目录结构规范
+    ++ 针对每一个角色，ansible会到固定的目录去调取特定的数据
+
+比如，名为 nginx 的角色目录构成：
+nginx/ 				//角色根目录
+nginx/tasks/main.yml 		//任务入口，最主要的文件
+nginx/defualts/main.yml 		//定义变量的缺省值，优先级较低
+nginx/files/ 			//存放静态文件
+nginx/handlers/main.yml 		//定义handlers处理任务
+nginx/meta/main.yml 		//定义作者、版本等描述信息
+nginx/README.md 			//整个角色的描述信息
+nginx/templates/ 			//存放模板文件
+nginx/vars/main.yml 		//定义角色变量，优先级高
+
+关于rhel-system-roles软件包：
+    ++ 安装后会提供一组由红帽预先设置好的角色，方便用来管理RHEL系统
+    ++ 比如 timesync、kdump、network、postfix、……等等
+    ++ 默认位置 /usr/share/ansible/roles/*，可以按需复制到用户的roles目录下使用
+
+设置角色变量：
+    ++ 通过修改角色目录下的 vars/main.yml 文件，可以定义角色变量
+比如：
+[alice@control ansible]$ cp  -r  /usr/share/ansible/roles/rhel-system-roles.timesync  roles/
+[alice@control ansible]$ vim  roles/rhel-system-roles.timesync/vars/main.yml
+.. ..
+timesync_ntp_servers:
+  - hostname: 172.25.254.250
+    iburst: yes
+
+通过playbook剧本调用xx系统角色：
+    ++ 使用roles语句，指定角色名称即可调用角色任务、变量等批量数据
+比如：
+[alice@control ansible]$ cat  timesync.yml
+---
+- name: timesync
+  hosts: all
+  roles:
+    - rhel-system-roles.timesync      //调用xx角色
+...
+
+
+05. 通过galaxy安装角色
+ansible-galaxy工具的作用：
+    ++ galaxy的本意为“银河系”，ansible-galaxy工具可以用来统一管理大量角色
+    ++ 联网情况下，可以通过ansible-galaxy工具访问ansible官网的公共仓库 https://galaxy.ansible.com/api/
+
+基本用法：
+[alice@control ansible]$ ansible-galaxy  list 
+.. ..        //列出已经安装的角色
+[alice@control ansible]$ ansible-galaxy  init  roles/myrole
+.. ..       //创建名为myrole的自定义角色（目录结构）
+[alice@control ansible]$ ansible-galaxy  remove  myrole
+.. ..       //删除名为myrole的角色
+[alice@control ansible]$ ansible-galaxy  search  nginx
+.. ..       //从ansible官网搜索可用的角色（需联网）
+[alice@control ansible]$ ansible-galaxy  info  haproxy  --offline
+.. ..       //查询已安装的haproxy角色的描述信息
+[alice@control ansible]$ ansible-galaxy  install  -r  角色列表文件
+.. ..       //根据角色列表文件的定义，下载并安装新的角色
+比如：
+[alice@control ansible]$ vim  roles/down.yml     //配置角色导入信息
+- name: haproxy           //指定角色1的新名称
+  src: http://study.lab0.example.com/roles/haproxy.tar   //指定角色tar包的下载地址
+- name: myphp           //指定角色2的新名称
+  src: acandid.httpd      //通过名称直接从ansible官网下载（需联网）
+
+
+06. 创建及使用自定义角色
+1）使用template模块，从模板上传文件
+基本用法：
+# ansible  清单主机  -m  template  -a  '任务参数'
+    ++ src=模板文件路径  		//指定被复制的本地文件（必选参数）
+    ++ dest=目标文件路径  		//指定上传到目标主机的新文件（必选参数）
+    ++ force="yes|no"  		//目标文件已存在时是否替换
+    ++ owner=属主 			//指定新文件的属主
+    ++ group=属组 			//指定新文件的属组
+    ++ mode=权限标记 		//指定新文件的权限
+    ++ setype=SELinux类型 		//指定新文件的SELinux标签类型
+比如：
+[alice@control ansible]$ ansible  node1  -m  template  -a  'src=welcome.html  dest=/tmp/welcome.html mode=644  force=yes'
+.. ..         //上传文件到主机node1，强制覆盖
+[alice@control ansible]$ ansible  node1  -a  'ls  -lh /tmp/welcome.html'
+node1 | CHANGED | rc=0 >>
+-rw-r--r--. 1 root root 23 Apr 17 07:22 /tmp/welcome.html
+.. ..         //检查结果
+
+2）使用service模块，管理系统服务
+基本用法：
+# ansible  清单主机  -m  service  -a  '任务参数'
+    ++ name=服务名  		//指定系统服务名（必选参数）
+    ++ state="started|stoped|restarted|reloaded"   	//启动|停止|重启|重载服务
+    ++ enable="yes|no"  		//是否开机自启
+比如：
+[alice@control ansible]$ ansible node1 -m service -a "name=crond state=restarted enabled=yes"
+.. ..         //重启crond服务，并设置开机自启
+
+3）使用firewalld模块，管理防火墙策略
+防火墙系统服务：
+    firewalld
+预设安全区域：
+    block：阻止所有数据包
+    drop：丢弃所有数据包
+    public：公共区域，允许SSH等极个别服务，默认区域
+    rusted：信任区域，允许任何访问
+    work：办公区域，允许SSH、Samba少数几个服务
+预设保护服务：
+    http、https、dns……
+
+防火墙管理工具：
+    firewall-cmd、firewall-config
+
+防火墙规则的作用范围：
+    ++ 运行配置 —— 当前有效，重启firewalld服务后失效
+    ++ 永久配置 —— 当前无效，重启firewalld服务后有效 ，通过添加 --permanent 选项设置
+
+查看/修改默认区域：
+# firewall-cmd  --get-default-zone
+# firewall-cmd  --set-default-zone=trusted
+
+如何设置具体的防火墙规则：
+# firewall-cmd  --add-service=服务名  --zone=区域名
+# firewall-cmd  --add-source=源地址  --zone=区域名
+
+基本用法：
+# ansible  清单主机  -m  firewalld  -a  '任务参数'
+    ++ state="present|absent|enabled|disabled"  	//添加|删除|启用|禁用规则（必选参数）
+    ++ permanent="yes|no"  		//是否作为永久策略
+    ++ zone="安全区域名" 		//指定所在的安全区（状态为present|absent必须指定zone）
+    ++ service=服务名   		//指定要保护的服务（防火墙预设的）
+    ++ port="协议/端口号"  		//指定协议和端口号
+    ++ source="源地址" 		//指定源地址
+    ++ immediate="yes|no" 		//是否立即启用此规则
+比如：
+[alice@control ansible]$ ansible node1 -m firewalld -a 'service=http state=present permanent=yes immediate=yes'
+.. ..         //设置永久规则，允许访问http资源，立即生效
+
+4）使用ansile-galaxy初始化自定义角色
+  ++ ansible-galaxy  init  roles/角色名
+比如：
+[alice@control ansible]$ ansible-galaxy  init  roles/httpd
+.. ..
+
+5）定义角色模板（template/xxxx.j2），方便嵌入变量
+  ++ 在角色目录下的 template/ 子目录中，可以存放模板文件
+  ++ 模板文件可以嵌入变量，使新文件的内容更灵活
+比如：
+[alice@control ansible]$ vim  roles/httpd/templates/index.html.j2
+Welcome to {{ansible_fqdn}} on {{ansible_eth0.ipv4.address}}
+
+6）定义角色任务（task/main.yml）
+    ++ 修改角色的主任务剧本时，只需要指定核心任务操作
+    ++ 不要指定 hosts 清单主机
+比如：
+[alice@control ansible]$ vim  roles/httpd/tasks/main.yml
+- name: 1. install httpd     //装包
+yum: pkg=httpd state=present
+- name: 2. deploy index.html     //配置网页资源
+template: src=index.html.j2 dest=/var/www/html/index.html
+- name: 3. httpd       //起服务
+service: name=httpd state=restarted enabled=yes
+.. ..
+7）在剧本中调用自定义角色
+    ++ 方法与调用其他角色的方法一样
+    ++ 都是使用 roles: 语句
+比如：
+[alice@control ansible]$ cat  myrole.yml
+---
+- name: use role
+  hosts: webtest
+  roles:
+    - httpd
+...
+
+
+07. 使用之前通过galaxy下载的角色
+1）通过playbook剧本调用galaxy下载的角色
+    ++ 此处略（同上）
+    ++ 注意剧本中的任务顺序，避免踩坑（有些角色不搜集主机信息）
+
+2）使用firewalld模块，管理防火墙策略
+    ++ 此处略（同上）
+
+
+08. 编写剧本远程管理逻辑卷
+1）使用parted模块，管理磁盘分区
+基本用法：
+# ansible  清单主机  -m  parted  -a  '任务参数'
+    ++ device="磁盘设备"  		//指定操作的磁盘设备（必选参数）
+    ++ label="gpt|msdos"  		//新磁盘分区表类型
+    ++ number="分区编号" 		//指定分区编号
+    ++ part_start="起始位置"  		//指定新建分区的起始位置
+    ++ part_end="起始位置"  		//指定新建分区的结束位置
+    ++ state="present|absent|info" 	//创建|删除|查看信息
+
+2）使用lvg模块，管理卷组
+基本用法：
+# ansible  清单主机  -m  lvg  -a  '任务参数'
+    ++ vg="卷组名"  			//指定操作的卷组名（必选参数）
+    ++ state="present|absent"  		//创建|删除卷组
+    ++ force="yes|no" 		//是否强制删除卷组（即使有逻辑卷）
+    ++ pvs="物理卷列表" 		//新建卷组时，指定由哪些物理设备组成
+    ++ pesize="PE大小" 		//指定Physical Extent的大小
+
+3）使用lvol模块，管理逻辑卷
+基本用法：
+# ansible  清单主机  -m  lvol  -a  '任务参数'
+    ++ lv="逻辑卷名"  		//指定操作的逻辑卷名（必选参数）
+    ++ size="逻辑卷大小" 		//指定逻辑卷大小
+    ++ vg="卷组名" 			//指定逻辑卷所在卷组
+    ++ state="present|absent"  		//创建|删除逻辑卷
+    ++ force="yes|no" 		//是否强制删除或调整逻辑卷大小
+
+4）使用filesystem模块，格式化分区或卷
+# ansible  清单主机  -m  filesystem  -a  '任务参数'
+    ++ dev="逻辑卷名"  		//指定要格式化的设备路径（必选参数）
+    ++ fstype="文件系统类型" 		//指定格式化类型（xfs、ext4等）
+    ++ force="yes|no" 		//是否强制格式化（即使已经有文件系统）
+
+5）使用when条件
+when条件用来判断系统指标，当满足条件时才会执行某个任务
+    ++ 常见条件操作符如下：==、!=、>、>=、<、<=、in、not in
+    ++ 使用and或or可以组合多个条件
+    ++ when表达式中调用变量时，不需要使用 {{  }}
+比如：
+[alice@control ansible]$ cat  when.yml 
+---
+- name: when test
+  hosts: node1,node3
+  tasks:
+    - file: path="/tmp/yes.txt" state=touch    //在目录/tmp/下创建文件yes.txt
+      when: ('web' in group_names)     //当主机属于web组时执行
+    - debug: msg="vg myvg not found"     //显示一段文本
+      when: ('myvg' not in ansible_lvm.vgs)   //当卷组myvg不存在时
+...
+
+6）failed_when中断控制
+    ++ failed_when条件的用法与when类似
+    ++ 但是当满足failed_when的条件时，playbook就认为失败，不再执行后续任务
+
+7）block语句块的使用
+block语句可以将多个任务操作捆绑到一起，当成一个整体
+    ++ 当满足when条件后要执行多个操作时，就可以使用block把这些操作捆在一块
+    ++ 当然，when条件也不是必需的，可以只是捆绑多个任务
+    ++ rescue抢救机制（非必需），当block任务失败时，可以执行rescue任务
+    ++ always完结机制（非必需），无论block任务是否成功，最后都去执行always任务
+比如：
+    block: 
+        - 任务1: .. ..
+        - 任务2: .. ..
+    when：条件测试
+    rescue：
+        - 任务3: .. ..
+        - 任务4: .. ..
+    always: 
+        - 任务5: .. ..
+—— 执行结果是：
+    当条件测试不成立时，任务1-5都不执行
+    当条件测试成立时，执行任务1、任务2；如果任务1、2中有失败的，则执行任务3、4
+    当条件测试成立时，任务5始终都会执行
+
+比如：
+[alice@control ansible]$ cat  block.yml
+---
+- name: block test
+  hosts: node1
+  tasks:
+    - block:
+        - debug: msg="vg myvg not found"   //提示卷组没找到
+        - debug: msg="create vg myvg .. .."   //做其他操作（比如创建这个卷组...）
+      when: ('myvg' not in ansible_lvm.vgs)   //当卷组myvg不存在时
+      rescue:
+        - debug: msg="creating failed .. .."     //block失败时提示创建卷组失败
+      always:
+        - shell: vgscan          //列出卷组信息
+          register: list         //保存到名为list的变量
+        - debug: msg={{list.stdout_lines}}     //提示卷组扫描结果
+...
+
+8）handlers任务处理（布雷）、notify通知触发（引爆）
+handlers可以设置一个或一块任务，仅当收到某个任务通知时才会执行
+    ++ 每个剧情中handlers任务只会执行一次，即使收到多个任务的触发通知
+    ++ handlers组的每一个任务都要设置名称（name）
+    ++ handlers的层次与tasks平级
+    ++ 其他任务在必要时，使用notify语句通知handlers任务名
+    ++ 仅当发起notify的任务的执行状态为changed时，handlers任务才会被执行
+比如：
+[alice@control ansible]$ cat  handlers.yml 
+---
+- name: handlers test
+  hosts: node5
+  tasks:
+    - lvol: lv=vo001 size=100M vg=search   //创建逻辑卷vo001
+      notify: mkfs     //如果changed则通知格式化（否则无需格式化）
+  handlers:
+    - name: mkfs     //定义格式化操作处理
+      filesystem: dev=/dev/search/vo001 fstype=xfs force=yes 
+...
+
+
+++ 根据模板部署主机文件；
+++ 编写剧本修改远程文件、部署远程Web目录；
+++ 编写剧本为受管机生成硬件报告；
+++ 创建并使用保险库文件；
+++ 编写剧本为受管机按条件创建用户。
+
+######## ######## ######## ######## 
+
+09. 根据模板部署主机文件
+1）使用template模块，从模板上传文件
+    ++ 此处略（同上）
+2）模板中的for循环应用
+    ++ 通过魔法变量 groups.all 取得所有清单主机名
+    ++ 通过魔法变量 hostvars[node1] 取得node1的信息（需在剧本中提前搜集）
+比如：
+[alice@control ansible]$ vim  newhosts.j2
+127.0.0.1 localhost localhost.localdomain localhost4 localhost4.localdomain4
+::1 localhost localhost.localdomain localhost6 localhost6.localdomain6
+
+
+{% for id in groups.all %} 
+{{hostvars[id].ansible_eth0.ipv4.address}}  {{hostvars[id].ansible_fqdn}}
+{{hostvars[id].ansible_hostname}}
+{% endfor %}
+
+
+[alice@control ansible]$ vim  newhosts.yml
+- name: gather groups facts
+hosts: all            //搜集所有主机的信息
+- name: deploy /etc/newhosts
+hosts: test01         //为 xx 组部署
+tasks:
+- template: src=newhosts.j2  dest=/etc/newhosts   //通过模板部署文件
+
+10. 编写剧本修改远程文件内容
+1）使用copy模块，将一个文件或一段文本内容复制到远程主机
+基本用法：
+# ansible  清单主机  -m  copy  -a  '任务参数'
+    ++ dest="目标文件路径"  		//指定拷贝到远程后的新文件路径（必选参数）
+    ++ content="文本内容" 		//指定要拷贝的文本内容
+    ++ src="原始文件路径" 		//指定要拷贝的本地文件路径
+    ++ force="yes|no"  		//目标文件已存在时是否替换
+    ++ owner=属主 			//指定新文件的属主
+    ++ group=属组 			//指定新文件的属组
+    ++ mode=权限标记 		//指定新文件的权限
+    ++ setype=SELinux类型 		//指定新文件的SELinux标签类型
+比如：
+[alice@control ansible]$ ansible  node1  -m  copy  -a  'src=/etc/fstab  dest=/tmp/fstab.txt mode=644'
+.. ..          //拷贝fstab文件到node1
+[alice@control ansible]$ ansible  node1  -a  'ls  -lh  /tmp/fstab.txt'    //检查结果
+node1 | CHANGED | rc=0 >>
+-rw-r--r--. 1 root root 547 Apr 17 08:30 /tmp/fstab.txt
+
+
+[alice@control ansible]$ ansible  node1  -m copy -a 'content="AAAA\nBBBB\nCCCC\n" dest=/tmp/content.txt'
+.. ..         //在node1创建指定内容的新文件
+[alice@control ansible]$ ansible  node1  -a  'cat  /tmp/content.txt'   //检查结果
+node1 | CHANGED | rc=0 >>
+AAAA
+BBBB
+CCCC
+
+2）模板文件中的if分支应用
+[alice@control ansible]$ vim  newissue.yml
+- name: deploy /etc/issue
+hosts: all
+tasks:
+- copy:
+  content: |       //准备文本内容
+    {% if "test01" in group_names %}   //如果所在组包括 dev
+    test01
+    {% elif "test02" in group_names %}   //如果所在组包括 test
+    test02
+    {% elif "web" in group_names %}   //如果所在组包括 prod
+    Webserver
+    {% endif %}
+  dest: /etc/issue       //复制到指定目标文件
+
+
+[alice@control ansible]$ ansible-playbook  newissue.yml
+
+
+11. 编写剧本部署远程Web目录
+1）使用group模块，管理组账号
+基本用法：
+# ansible  清单主机  -m  group  -a  '任务参数'
+    ++ name="组名"  		//指定要创建的组账号名称（必选参数）
+    ++ gid="组ID" 			//指定要创建的组的GID
+    ++ state="present|absent"  		//创建|删除组账号
+比如：
+[alice@control ansible]$ ansible  node1  -m group  -a  'name=admins  gid=1200  state=present'
+.. ..         //在node1上创建名为admins的组账号
+
+2）使用file模块，管理文件/目录
+基本用法：
+# ansible  清单主机  -m  file  -a  '任务参数'
+    ++ path="新文件路径"  		//指定要创建的新文件路径（必选参数）
+    ++ state="directory|touch|link" 	//新文件的类型为目录|空文件|链接文件
+    ++ src="被链接的原始文件路径" 	//如果是创建符号链接文件，需要指定此参数
+    ++ force="yes|no"  		//目标文件已存在时是否替换，或者被链接文件不存在时是否仍然创建链接
+    ++ owner=属主 			//指定新文件的属主
+    ++ group=属组 			//指定新文件的属组
+    ++ mode=权限标记 		//指定新文件的权限
+    ++ setype=SELinux类型 		//指定新文件的SELinux标签类型
+
+3）使用sefcontext模块，管理SELinux策略
+基本用法：
+# ansible  清单主机  -m  sefcontext  -a  '任务参数'
+    ++ setype="SELinux标签类型" 	//指定标签类型（必选参数），比如网页内容 httpd_sys_content_t
+    ++ target="目录路径" 		//指定要设置的目录路径
+    ++ state="present|absent" 		//添加|取消上下文标记（缺省值为present）
+比如：
+[alice@control ansible]$ ansible  node1  -m sefcontext  -a  "target='/webdev(/.*)?' setype=httpd_sys_content_t  state=present"
+.. ..         //将node1的/webdev目录设置为网页目录
+
+4）使用copy模块，将一段文本复制到远程主机
+5）使用万能command/shell模块，推送命令行
+6）使用firewalld模块，管理防火墙策略
+7）使用service模块，管理系统服务
+    ++ 此处略（4~7同上）
+
+
+12. 编写剧本为受管机生成硬件报告
+1）在playbook剧本中定义变量
+    ++ 此处略（同上）
+2）使用get_url模块，从URL下载文件
+基本用法：
+# ansible  清单主机  -m  get_url  -a  '任务参数'
+    ++ dest="目标文件路径" 		//指定下载后存放的新文件路径（必选参数）
+    ++ url="文件的URL网址" 		//指定要下载的文件的URL地址（必选参数）
+    ++ force="yes|no"  		//目标文件已存在时是否替换
+    ++ owner=属主 			//指定新文件的属主
+    ++ group=属组 			//指定新文件的属组
+    ++ mode=权限标记 		//指定新文件的权限
+    ++ setype=SELinux类型 		//指定新文件的SELinux标签类型
+
+3）使用replace模块，修改文件中的关键词
+基本用法：
+# ansible  清单主机  -m  replace  -a  '任务参数'
+    ++ dest="文件路径" 		//指定要修改的文件路径（必选参数）
+    ++ regexp="旧字符串" 		//指定要替换的字符串（必选参数），使用正则表达式
+    ++ replace="新字符串"  		//指定要替换的新字符串
+
+4）ignore_errors忽略错误
+    ++ 在剧本中即使遇到错误，仍然执行后续操作
+
+
+13. 创建保险库文件
+ansible的vault保险库：
+    ++ 为了方便保护一些敏感文件（如账号的密码）而设置的文件加密机制
+    ++ 加密/解密主要工具 ansible-vault
+    ++ 通过ansible-playbook调用保险库文件时，添加 --ask-vault-pass 选项会提示从键盘输入密码
+    ++ 需要验证密码的地方，都可以添加 --vault-password-file= 来指定密码文件以免除交互
+    ++ 在重设密码时，可以添加 --new-vault-password-file 来指定存放新密码的文件
+
+ansible-vault基本操作（以下为手动验密）：
+[alice@control ansible]$ ansible-vault  create  new.txt   //直接创建新加密文件
+.. .. //根据提示设置密码
+[alice@control ansible]$ ansible-vault  view  new.txt   //查看已加密的文件
+.. .. //根据提示输入正确的密码验证
+[alice@control ansible]$ ansible-vault  decrypt  new.txt   //将文件解密（恢复成明文数据）
+.. .. //根据提示输入正确的密码验证
+[alice@control ansible]$ ansible-vault  encrypt  new.txt   //将现有文件加密（变成密文）
+.. .. //根据提示设置密码
+[alice@control ansible]$ ansible-vault  rekey  new.txt   //修改已加密文件的密码
+.. .. //根据提示验证旧密码
+.. .. //再设置新密码
+
+
+14. 编写剧本为受管机批量创建用户，要求使用保险库中的密码
+1）使用user模块，管理用户账号
+基本用法：
+# ansible  清单主机  -m  user  -a  '任务参数'
+    ++ name="登录名" 		//指定用户名（必选参数）
+    ++ password="加密的密码串" 	//一般使用 {{'123456'|password_hash('sha512')}} 形式
+    ++ uid="用户ID号" 		//指定用户的UID
+    ++ group="基本组名" 		//指定用户的基本组名
+    ++ groups="附属组名" 		//将用户添加到xx附属组，结合append=yes
+    ++ append="yes|no"		//是否向xx组追加此用户，如果选no用户只属于这个组
+    ++ state="present|absent" 		//创建|删除用户（缺省值为present）
+    ++ force="yes|no"  		//是否强制删除用户，即使此用户已经登录
+    ++ remove="yes|no" 		//删除用户时是否同时删除家目录
+比如：
+[alice@control ansible]$ ansible  node1  -m user  -a 'name=dongfang uid=1234 groups=users  append=yes'   
+.. ..         //添加新用户，加入到users组
+[alice@control ansible]$ ansible  node1  -m user  -a "name=bubai   password={{' 123456'|password_hash('sha512') }}"
+.. ..         //添加新用户并设置密码
+[alice@control ansible]$ ansible  node1  -m user  -a 'name=dongfang state=absent  remove=yes' 
+.. ..        //删除用户
+
+
+2）使用loop循环
+    ++ 通过loop语句可以构造一个值列表（队列）
+    ++ 针对loop队列中的值，可以共享同一个任务操作，从而节省代码量、提高效率
+    ++ 任务要调用队列中的值时，使用固定变量 {{item}}
+比如：
+[alice@control ansible]$ cat  lamp.yml
+---
+- name: Deploy LAMP Platform
+  hosts: host1
+  tasks:
+  - name: install LAMP packages
+    yum: name:={{item}}  state=present  //调用循环变量（固定名称item）
+    loop:         //配置列表循环项
+        - httpd
+        - mariadb
+        - mariadb-server
+        - php
+        - php-mysqlnd
+  - name: enable LAMP services
+    service: name={{item}}  state=started  enabled=yes
+    loop:
+        - httpd
+        - mariadb
+...
+
+3）通过playbook剧本调用加密的保险库（使用密码文件）
+4）在playbook剧本中载入变量文件
+5）自定义变量及调用
+6）使用when条件
+    ++ 此处略（3-6同上）
+
+
+15. 重设保险库密码
+    ++ 此处略（同上）
+
+
+    ++ （END）
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

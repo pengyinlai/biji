@@ -1,7 +1,0 @@
-用户授权
-
-创建 grant 授权
-授权： 添加用户并设置权限
-grant 授权列表  on  库名 to 用户名@“客户端地址”
-	  identified by “密码” 			//授权用户密码
-	  with grant option 			//有授权权限  可选项

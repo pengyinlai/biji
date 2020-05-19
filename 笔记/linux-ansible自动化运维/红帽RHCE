@@ -1,0 +1,10 @@
+红帽练习RHCE
+
+【第十三题】
+ansible]$ ansible-vault  view   passdb.yml --vault-password-file=secret.txt //查看加密文件
+ansible]$ ansible-vault  encrypt   passdb.yml --vault-password-file=secret.txt  //创建加密文件
+ansible-vault  encrypt --vault-id=pass.txt  data.txt
+ansible-vault rekey data.txt             #修改密码
+
+ansible-playbook  --ask-vault-pass  vault.yml
+#--ask-vault-pass代表执行剧本时提示输入密码(因为有文件被提前加密了)
