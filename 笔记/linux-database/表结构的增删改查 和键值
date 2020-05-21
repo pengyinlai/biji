@@ -1,0 +1,94 @@
+【表结构（增删改查）】
+
+【约束条件】
+查看约束条件
+语法：desc 库名.表名；
+字段名 |  类型		|   空  |  键值  |  默认值  |   额外设置
+设置约束条件
+Null 允许为空值  not null 不允许为空值  key  键值类型 default 设置默认值 默认为空 	extra  额	外设置
+
+【新建表结构】
+语法： create table db1.t7(name char(10) not null , age tinyint unsigned default 19);
+
+修改表结构
+语法：alter table 库名.表名 执行动作；
+执行动作有 add 添加字段	名 类型（宽度）  约束条件 添加位置；
+【after 字段名 添加到字段之后】
+【first 添加到第一个】
+Modify 修改字段类型 
+语法： modify 字段名 类型（宽度） 约束条件 位置；
+修改的字段类型不能拿与已经存储的数据冲突
+Change 修改字段名
+Drop    删稠字段
+Rename  修改表名
+
+【Mysql 键值】
+键值类型
+1）index			普通索引
+2）Unique			唯一索引
+3）Fulltext			全文索引
+4）Primary key		主键
+5）Foreign key		外键 
+
+【索引介绍】
+6）类似于书的目录
+7）对表中字段值进行排序
+8）索引类型包括：Btree B+tree hash
+
+优点：通过创建唯一性索引 可以保证数据库表中每一行数据的唯一性 
+可以加快数据的查询速度
+缺点： 当对表中的数据惊醒增 删 改的时候索引也要动态的调整 降低了数据的维护速度
+            索引需要占用物理空间
+
+【普通索引index 使用规则】
+
+一个表中可以有多个index字段
+一个字段的值允许重复 且可以符null(空)值
+通常把做为查询条件的字段设置为index字段
+Index字段标志是mul
+
+创建索引
+在已有的表里创建索引
+Create index 索引名 on 表名（字段名）；
+删除索引
+Drop index 索引名 on 表名；
+查看索引信息
+Show index from 表名 \G;
+
+【Primary key 主键】
+使用规则
+字段值不允许重复 且不允许符null 值
+一个表中只能有哦一个primary key字段
+多个字段都作为主键 称为复合主键 必须一起创建
+主键字段的标志是PRL
+主键通常与auto_increment连用
+通常把表中唯一标识记录的字设置为主键【记录编号字段】
+
+建表时创建主键（primary key(字段名) ）
+语法：create table 库名.表名（name char(3) primary key,id int）；
+查看：Desc 库名.表名
+在已有的表中添加主键
+语法：alter table 表名 add primary key(字段名);
+删除主键
+语法：alter table 表名 drop primary key; 
+
+床键复合主键（primary key(字段名1，字段名2) ）
+建表时创建复合主键
+Create table 库名.表名（name char(2), class char(7), status enum(“yes”,”no”), primary 		key(name,class) ）；
+与auto_increament连用（主键每次默认自增1）
+Create table 库名.表名（id int primary key auto_increment, name char(10)）；
+
+【foreign key 外键】
+
+外键功能：插入记录时 字段值在另一个表字段值范围内选择
+使用规则：表中储存引擎必须是innodb  两个表中字段类型要一致 被参照字段必须要是索引类型的			一种（primary key）
+
+建表时创建外键
+Create table 库名.表名（字段名列表 foreign key(字段名) references 表名（字段名)	//指定外键
+On update cascade			//同步更新
+On delete cascade			//同步删除
+）engine=innodb；			//指定存储引擎
+
+删除外键
+Alter table 表名 drop foreign key 外键名；
+Show create table gz\G  		//查看外键名

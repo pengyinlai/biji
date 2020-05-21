@@ -1,0 +1,63 @@
+【·数据库类型】
+
+【字符类型】	
+定长cha
+最大字符个数255 不够指定字符个数时在右边空格补全 字符超出时 无法写入数据
+语法： create table db1.t1( name char(5), homedir char(50));
+变长varchar
+按数据实际大小分配空间 字符超出时无法写入数据
+语法： create table db1.t2(name char(5), email varchar(30));
+【大文本类型】 text/blob
+
+【数值类型】
+整数型
+Smallint 小整数 
+Int     大整数
+Bigint	q  极大整型
+Unsigned	使用整数范围
+语法： create table db1.t3(pay int unsigned, age smallint);
+
+【浮点型】
+Float  单精度
+Double 双精度
+语法：一：字段名 类型
+ 二：字段名（总宽度，小数位）
+
+【日期时间类型】
+类型
+Datatime 
+格式： yyyymmddhhmmss (在不输入值时为空)
+Timestamp 
+格式：yyyymmddhhmmss（默认为系统时间）
+Date 日期
+格式：yyyymmdd
+Year 年
+格式：yyyy
+Time 时间
+格式：HH:MM:SS
+
+【时间函数】
+ Now()  获取当前系统时间和日期
+Time( now() ) 获取时间
+Year( now() )  获取年
+Day( now() )   获取日
+Date( now() )   获取日期
+
+【枚举类型】
+Enum单选
+格式：字段名 enum(“值”,”值”,”值”)
+仅能选择一个值 字段必须在列表里选择
+【Set多选】
+格式：字段名 set(“值”,”值”,”值”,”值”,”值”,”值”)
+选择一个或多个值  字段必须在列表里选择
+
+
+【约束条件】
+Desc 库名.表名			//查看约束条件
+
+设置约束条件
+Null				允许为空（默认设置）
+Not null			不允许为null (空)
+Key				键值类型
+Default			设置默认值 缺省为null
+Extra			额外设置

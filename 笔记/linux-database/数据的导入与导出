@@ -1,0 +1,59 @@
+数据库 数据的导入与导出
+Aiopr 皇者 2020-05-21 09:48:15 1 收藏
+编辑 展开
+
+一：准备导入/导出的基础环境
+1）创建一个新的目录，并修改权限（默认的实在/etc/lib/mysql/）目录下
+
+mkdir	/myload
+	chown mysql /myload
+
+
+2)查看并修改系统变量
+（在数据内的命令内一下用> 表示在数据内的输入内容）
+
+>show variable like "secure_file_priv";
+	]vim /etc/my.cnf
+	【mysql】
+	secure_file_priv="/myload"  		//指定数据库读取目录;
+
+
+二：数据打导入
+
+·字段分割符要与文件一致
+·表字段类型和字段个数要与文件匹配
+·导入数据时指定摁键的绝对路径
+
+导入注意事项
+字段分割符要与文件一致
+表字段类型和字段个数要与文件匹配
+导入数据时指定文件的绝对路径
+
+默认只要root用户有数据导入权限
+需要提前在数据库内把要 导到的表内 的表结构创建好
+
+语法：>load data infile “目录名/文件名” 
+into table 库名.表名					
+Fields terminated by “分割符”			//指定列的分隔符
+Lines terninated by “\n”;				//指定行的分割符 默认行的结尾 \n
+
+
+三：数据导出
+
+格式1：select into outfile  “目录名/文件名”;
+
+格式2：select  into outfile “目录名/文件名”
+	  Fields terminated by “分隔符”;			//指定列的分割符
+
+格式3：select into outfile “目录名/文件名”
+	 Fieldes terminated by “分割符”
+     Linex terminated by “\n”;
+
+   
+
+导出数据注意事项
+导出数据行数由sql 查询决定
+导出的是表记录 不包括字段名
+自动创建储存数据的文件
+存储数据文件 具有唯一性
+————————————————
