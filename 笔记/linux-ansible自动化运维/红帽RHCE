@@ -1,10 +1,301 @@
 红帽练习RHCE
 
-【第十三题】
-ansible]$ ansible-vault  view   passdb.yml --vault-password-file=secret.txt //查看加密文件
-ansible]$ ansible-vault  encrypt   passdb.yml --vault-password-file=secret.txt  //创建加密文件
-ansible-vault  encrypt --vault-id=pass.txt  data.txt
-ansible-vault rekey data.txt             #修改密码
+【第一题】安装和配置ansible环境
+1）安装所需软件包
+yum -y install  ansible 
+/etc/ansible/ansible.cfg
+/etc/ansible/hosts
 
-ansible-playbook  --ask-vault-pass  vault.yml
-#--ask-vault-pass代表执行剧本时提示输入密码(因为有文件被提前加密了)
+2）在/home/alice/ansible/inventory文件中设置主机清单，要求
+mkdir ansible 
+cd ansible
+vim inventory
+[test01]
+node1
+[test02]
+node2
+[web]
+node3
+node4
+[test05]
+node5
+[webtest:children]
+web
+
+3)在/home/alice/ansible目录中创建ansible.cfg，满足以下需求
+vim ansible.cfg
+
+[defaults]
+inventory      = inventory
+remote_user    = alice
+roles_path    = roles
+
+[privilege_escalation]
+become=True
+become_method=sudo
+become_user=root
+become_ask_pass=False
+
+ansible all --list-host				//测试一下
+
+
+【第二题】创建和运行Ansible临时命令
+
+vim adhoc.sh 		chmod +x adhoc.sh	//添加执行权限
+#!/bin/bash
+#部署yum 员
+ansible all  -m yum_repository -a "name='BASE' 
+description='software base' 
+baseurl='http://study.lab0.example.com/rhel8/BaseOS' 
+gpgcheck='yes' 
+gpgkey='http://study.lab0.example.com/rhel8/RPM-GPG-KEY-redhat-release'"
+
+ansible all  -m yum_repository -a "name='STREAM' 
+description='software stream' 
+baseurl='http://study.lab0.example.com/rhel8/AppStream' 
+gpgcheck='yes' 
+gpgkey='http://study.lab0.example.com/rhel8/RPM-GPG-KEY-redhat-release'"
+
+
+【第三题】编写剧本远程安装软件
+
+---
+- name: 安装软件包
+  hosts: test01,test02,web
+  tasks:
+    - yum: pkg=php state=present
+    - yum: pkg=tftp state=present
+- name: 安装软件包
+  hosts: test01
+  tasks:
+    - yum: pkg="@RPM Development Tools" state=present
+- name: 更新软件包
+  hosts: test01
+  tasks:
+    - yum: pkg="*" state=latest
+
+
+【第四题】 安装并使用系统角色
+
+yum list | grep roles 			//查找软件包
+yum -y install  rhel-system-roles
+rpm -ql  rhel-system-roles		//查找安装路径
+cp -r /usr/share/ansible/roles/rhel-system-roles.timesync/  roles/		//拷贝时间剧本到roles内
+
+vim timesync。yml
+
+---
+- name: 定义一个新的标量 替换文档中老的变量
+  hosts: all
+  vars:
+    - timesync_ntp_servers:
+      - hostname: 172.25.254.250
+        iburst: yes
+  roles:
+    - rhel-system-roles.timesync
+
+【第五题】通过galaxy安装角色
+
+ansible-galaxy install -r roles/down.yml
+vim roles/down.yml
+
+- name: haproxy
+  src: http://study.lab0.example.com/roles/haproxy.tar
+- name: myphp
+  src: http://study.lab0.example.com/roles/myphp.tar
+
+【第六题】创建及使用自定义角色
+
+ansible-galaxy init roles/httpd			//生成角色文件
+vim roles/httpd/templates/index.html.j2		//定义标量文件
+Welcom to {{ansible_fqdn}} on {{ansible_facts.eth0.ipv4.address}}
+
+vim roles/httpd/tasks/main.yml			//写执行程序
+
+---
+# tasks file for roles/httpd
+- yum: pkg=httpd state=present
+- template: src=index.html.j2 dest=/var/www/html/index.html
+- service: name=httpd  state=restarted enabled=yes
+- service: name=firewalld state=restarted enabled=yes
+- firewalld: service=http permanent=yes state=enabled  immediate=yes
+
+
+【第七题】使用之前通过galaxy下载的角色
+
+vim web.yml 
+
+---
+- hosts: webtest
+  tasks:
+  roles:
+    - myphp
+- hosts: test05
+  tasks:
+  roles:
+    - haproxy
+  tasks:
+    - firewalld: service=http state=enabled permanent=yes immediate=yes
+
+
+【第八题】编写剧本远程管理逻辑卷
+
+---
+- name:
+  hosts: all
+  tasks:
+    - name: failed when vg search not found
+      debug: msg="insufficient free space"
+      when: "'search' not in ansible_facts.lvm.vgs"
+      failed_when: "'search' not in ansible_facts.lvm.vgs"
+    - block:
+        - lvol: lv=mylv size=1000M vg=search
+          notify: qibao
+      rescue:
+        - debug: msg="VG not found"
+        - lvol: lv=mylv size=500M vg=search
+          notify: qibao
+  handlers:
+     - name: qibao
+       filesystem: dev=/dev/search/mylv fstype=ext4 force=yes
+
+【第九题】根据模板部署主机文件
+
+yum -y install wget 			//安装wget 工具包
+wget http://study.lab0.example.com/materials/newhosts.j2		//下载文件到本地
+
+vim newhosts.j2			//修改变量文件
+
+{% for id in groups.all %}
+{{hostvars[id].ansible_facts.eth0.ipv4.address}} {{hostvars[id].ansible_facts.fqdn}} {{hostvars[id].ansible_facts.hostname}}
+{% endfor %}
+
+vim newhosts.yml
+
+---
+- hosts: all
+
+- hosts: test01
+  tasks:
+    - template: src=newhosts.j2 dest=/etc/newhosts
+
+
+【第十题】编写剧本修改远程文件内容
+
+ vim newissue.yml
+
+---
+- hosts: all
+  tasks:
+    - copy:
+        content: |
+            {% if 'test01' in group_names %}
+            test01
+            {% elif 'test02' in group_names %}
+            test02
+            {% elif 'web' in group_names %}
+            webserver
+            {% endif  %}
+        dest: /etc/issue
+
+
+【第十一题】编写剧本部署远程Web目录
+
+vim webdev.yml
+
+---
+- hosts: test01
+  tasks:
+    - group: name=webdev state=present
+    - file: name='/webdev' group=webdev mode=2775 state=directory
+    - file: name=/var/www/html/webdev src=/webdev state=link force=yes
+    - copy: content="It's works!" dest=/webdev/index.html force=yes
+    - yum: name=httpd state=present
+    - service: name=httpd state=restarted enabled=yes
+    - firewalld: service=http state=enabled permanent=yes immediate=yes
+    - command: chcon -R --reference=/var/www/ /webdev
+
+【第十二题】编写剧本为受管机生成硬件报告
+
+vim hardware.yml
+
+---
+- hosts: all
+  ignore_errors: yes
+  tasks:
+    - get_url: url=http://study.lab0.example.com/materials/hardware.empty dest=/root/hardware.txt
+    - replace: name='/root/hardware.txt' regexp=inventoryhostname replace={{inventory_hostname}}
+    - replace: name='/root/hardware.txt' regexp=memory_in_MB replace={{ansible_facts.memtotal_mb}}
+    - replace: name='/root/hardware.txt' regexp=BIOS_version replace={{ansible_facts.bios_version}}
+    - replace: name='/root/hardware.txt' regexp=disk_vda_size replace={{ansible_facts.devices.vda.size}}
+    - replace: name='/root/hardware.txt' regexp=disk_vdb_size replace={{ansible_facts.devices.vdb.size if ansible_facts.devices.vdb.size is defined else 'NONE'}}
+
+【第十三题】创建保险库文件
+
+ansible-vault create passdb.yml			//创建文文件时同时做加密
+pw_dev： ab1234
+pw_man： cd5678
+
+vim secret.txt
+pwd@1234
+
+ansible-vault view	--vault-password-file=secret.txt 		//查看验证
+ 
+【第十四题】编写剧本为受管机批量创建用户，要求使用保险库中的密码
+
+wget http://study.lab0.example.com/materials/name_list.yml
+
+vim users.yml
+---
+- hosts: test01,test02,web
+  vars_files:
+    - passdb.yml
+    - name_list.yml
+  tasks:
+    - group: name=devops
+    - group: name=opsmgr
+    - user: name={{item.name}} password={{pw_dev|password_hash('sha512')}} groups=devops
+      when: ( 'test01' in group_names or 'test02' in group_names) and (item.job == 'dev' )    
+      loop: "{{users}}"
+    - user: name={{item.name}} password='{{pw_man|password_hash('sha512')}}' groups=opsmgr
+      when: ('web' in group_names )and(item.job == 'man')
+      loop: "{{users}}"
+
+ansible-playbook users.yml --vault-password-file=secret.txt		//执行命令来时指定密码文件
+
+
+【第十五题】重设保险库密码
+
+wget http://study.lab0.example.com/materials/topsec.yml
+ansible-vault  rekey topsec.yml			//按照提示重置密码
+ansible-vault view topsec.yml		//验证密码
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
