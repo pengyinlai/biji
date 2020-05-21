@@ -1,0 +1,31 @@
+【percona 软件介绍】
+·xtrabackup工具
+一款强大的在线热备份工具
+++备份过程中不锁表 适合生产环境
+++有专业组织percona提供
+·主要含有连个组件
+++xtrabackup:
+++innobackupex
+
+percona安装包及依赖
+percona-xtrabackup-24-2.4.7-1.el7.x86_64.rpm    //安装包
+libev-4.15-1.el6.rf.x86_64.rpm					//依赖包
+
+【innobackupex备份与恢复】
+
+1.完全备份
+语法 innobackupex --user 用户名  --password “密码”  存放目录 （--no-timestamp 取消按系统时间命名）
+恢复：（需要关闭服务 删除/var/lib/mysql/* 下的所有数据）
+innobackupex  --apply-log  备份文件的路径  //准备要恢复
+innobackupex  --copy-back  备份文件的路径	//恢复数据
+chown -R mysql /var/lib/mysql/              //修改所有者
+启动服务
+
+2.单个表的备份
+>alter table db5.b  discard tablespace;			//删除表空间
+innobackupex --apply-log --export 数据完全备份目录		//导出表信息
+cp 数据库完全备份目录/数据库名目录/表名.{ibd,cfg,exp} /var/lib/mysql/恢复的库名/   //拷贝表信息文件
+chown mysql：mysql /var/lib/mysql/数据库名/恢复的表名    //修改所有者
+>alter table 库名.表名 import tablespace;				//导入表空间
+>select * from 库名.表名 ；								//查看表记录
+rm -rf  /var/lib/mysql/库名/表名.{cfg,exp}				//删除表信息文件

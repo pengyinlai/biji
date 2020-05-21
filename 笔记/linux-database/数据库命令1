@@ -3,19 +3,20 @@
 【创建 grant 授权】
 授权： 添加用户并设置权限
 grant 授权列表  on  库名 to 用户名@“客户端地址”
-	  identified by “密码” 			//授权用户密码
-	  with grant option 			//有授权权限  可选项
+identified by “密码” 			//授权用户密码
+with grant option 			//有授权权限  可选项
+
 案例 grant all on db4.* to yaya@"%" identified by "123445" ;
 
 
 【登录用户操作命令】
-select user();								//显示登录用户名及客户端登录地址
-show grants；								//显示登录用户自身访问权限
-show grants for 用户名@“客户端地址”			//管理员查看已有授权用户权限
-set password = password("密码");			//授权用户连接后修改连接密码
-set password for ”用户名“= password（“密码”）；//管理员重置授权用户连接密码
-drop user 用户名@“客户端地址”				//删除授权用户（必须有管理员权限）
-
+select user();									//显示登录用户名及客户端登录地址
+show grants；									//显示登录用户自身访问权限
+show grants for 用户名@“客户端地址”				//管理员查看已有授权用户权限
+set password = password("密码");				//授权用户连接后修改连接密码
+set password for ”用户名“= password（“密码”）； //管理员重置授权用户连接密码
+drop user 用户名@“客户端地址”				    //删除授权用户（必须有管理员权限）
+select user, host, from mysql.user ;            //先查看用户名 和登录的客户端辅助删除用户
 
 【mysql库 记录授权信息 主要表如下】
 - user表				//记录已有的授权用户及权限 地址
@@ -25,7 +26,7 @@ drop user 用户名@“客户端地址”				//删除授权用户（必须有管
 #查看表记录可以获取用户权限；也可以通过更新记录	修改权限
 
 
-flush privileges			//更新数据库 让操作生效
+flush privileges		//更新数据库 让操作生效
 
 
 【撤销权限】
@@ -37,7 +38,7 @@ mysql> revoke  all  on  *.* from mydba@"%" ;  			//撤销剩下的所有权限
 mysql> revoke grant option on *.* from  mydba@"%" ;  	//撤销授权权限
 mysql> revoke  create , drop  on  *.* from mydba@"%" ;  //仅撤销某个权限
 select  * from mysql.user where user="mydba" \G  		//授权库的记录也会自动改变
-drop user mydba@"%";      //删除授权的用户
+drop user mydba@"%";      								//删除授权的用户
 
 
 
@@ -75,6 +76,7 @@ cp -r /opt/*  /var/lib/mysql/		//把备份文件考到目标路径
 systemctl restart mysqld			//重启服务
 
 
+
 【数据完全备份】
 语法：
 ]# mysqldump   -uroot    -p密码    库名  >  目录/xxx.sql
@@ -94,7 +96,6 @@ mysqldump -uroot -p123bbb...A   -B db1 db3  > /bak/twodb.sql	//同时备份两�
 【恢复数据的命令】 
 命令格式：
 mysql  -uroot    -p密码   [ 库名 ]   <   目录/xxx.sql
-
 mysql -uroot -p123bbb...A  <  /opt/all.sql			//恢复整个库的数据
 mysql -uroot -p123bbb...A  db1 < /opt/db1.sql 		//恢复单个库的数据（如果库不存在 恢复就会失败 需要提前新建库）
 mysql -uroot -p123bbb...A  -e 'create database db1' // 在命令行创建库
@@ -109,25 +110,49 @@ mysql -uroot -p123bbb...A  -e 'create database db1'
 
 【数据增量备份与恢复】
 
+
 实现方法1 启用binlog日志文件
+
 日志介绍（什么是binlog日志文件）
 日志的使用：
 启用日志
 show master status;  //查看binlog.sql 是否启用
+
 ]# /etc/my.cnf
 [mysqld]
-log_bin
-server_id=50			//这号自定义一般用本主机IP地址的最后三位/两位
-log_bin=/mylog/db50		//自定义日志闻乐见存储目录和名称
+binlog_format=“mixed”		//修改变量混合模式
+log_bin						//启用binlog日志文件
+server_id=50				//这号自定义一般用本主机IP地址的最后三位/两位
+log_bin=/mylog/db50			//自定义日志闻乐见存储目录和名称
+mysqlbinlog  日志文件路径	//查看日志文件内容
 
 mysqlbinlog /var/lib/mysql/mysql50-bin.000001		//查看日志文件的内容
 cat /var/lib/mysql/mysql50-bin.index  				//查看索引文件的内容
-./mysql50-bin.000001
+
+生成新的日志文件
+1） systemctl restart mysqld			//重启服务生成新的日志文件
+2） mysql> flush logs ;					//在mysql 命令行生成新的日志文件
+3） mysql -uroot -p123bbb -e ”flush logs“ //在linux 命令行生成新的日志文件
+4） mysqldump -uroot -p123bbb --flush logs db1 > db1.sql  //在备份ku 的时候生成新的日志文件
+
+删除日志文件
+1）mysql> purge master logs to "db50.000002"   //删除标号2之前的文件
+2）mysql> reset master ;						//清空所有的日志文件				
+利用日志文件恢复数据内容
+mysqlbinlog  日志文件路径  | mysql -uroot -p密码    //恢复日志文件
 
 
+利用日志文件恢复一段时间/有选择的恢复数据内容
+1)修改变量的binlog_format   的显示方式
+在配置文件中添加
+binlog_format="" 常用的是三个值 //statement 报表模式 （可以看懂）
+								//row 行模式（看不懂）
+								//mixed 混合模式 （可以看懂）
 
-
-
+按照偏移量恢复数据（查看binlog日志得到偏移前的字号/偏移后字号）最后的字号可以不用写
+mysqlbinlog --start-datetime="2020/05/20 22:14:05" --stop-datetime="2020/05/20 22:14:05"  /root/db50.000001  | mysql -uroot -p123qqq...A
+按照时间段恢复数据（查看binlog日志得到命名执行前时间/后时间）最后的时间可以不用谢
+mysqlbinlog --start-position=298 --stop-position=1256  /root/db50.000001  | mysql -uroot -p123qqq...A
 
 
 
