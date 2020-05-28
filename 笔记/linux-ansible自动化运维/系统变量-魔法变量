@@ -1,0 +1,101 @@
+安装并使用系统角色
+
+1）变量的作用及定义、调用方法
+什么是变量：
+    ++ 通过固定的名称来调用可能变化的值，方便ansible重复调用以提高管理效率
+    ++ 采用 key=value，或者 key: value 的方式定义
+    ++ 调用时一般采用 {{key}} 方式
+变量的领域：
+    ++ 清单变量：在inventory清单主机中定义，作用于某个主机或某个主机组
+    ++ 剧本变量：在playbook剧本中定义，只在当前剧本中有效
+    ++ 系统变量：通过剧本的gather_facts=yes自动搜集（默认调用setup模块），对任务主机有效
+    ++ 魔法变量：由ansible预设，用来获取清单组、清单主机名等管理信息
+
+2）主机信息搜集（gather_facts: yes）
+    Ansible每次执行playbook剧本时，默认第一个任务就是Gathering Facts搜集主机信息。
+所有收集到的系统信息都被保存在ansible_facts指标变量中，可以通过setup模块查看，或者在playbook剧本中调用。
+
+3）使用setup模块，过滤出清单主机的系统指标
+基本用法：
+# ansible  清单主机  -m  setup  [-a  'filter=系统指标名']
+    ++ filter参数用来过滤出特定名称的系统指标
+    ++ 未知指标名部分可以使用 * 通配符
+比如：
+[alice@control ansible]$ ansible  node1  -m  setup    //查看node1的所有系统指标
+node1 | SUCCESS => {
+    "ansible_facts": {
+        "ansible_all_ipv4_addresses": [
+            "172.25.254.101"
+        ],
+        "ansible_all_ipv6_addresses": [
+            "fe80::6a52:a669:ccc3:13cc"
+        ],
+        "ansible_apparmor": {
+            "status": "disabled"
+        },
+.. ..
+[alice@control ansible]$ ansible  node1  -m  setup -a "filter=ansible_all_ipv4_addresses"
+.. ..         //查看指定名称的系统指标
+[alice@control ansible]$ ansible  node1  -m  setup -a "filter=*_ipv4_addresses"
+.. ..         //指定系统指标时，名称中允许使用通配符 * 
+
+常用系统指标：
+ansible_eth0 			//网卡eth0的配置信息
+ansible_fqdn 			//完整的主机名
+ansible_hostname 			//主机名
+ansible_all_ipv4_addresses		//系统IPv4地址列表
+ansible_bios_version 		//主机BIOS版本
+ansible_date_time 			//系统日期时间信息
+ansible_devices 			//硬件设备信息
+ansible_distribution 			//操作系统版本
+ansible_env 			//用户环境变量列表
+ansible_kernel 			//内核版本信息
+ansible_lvm 			//逻辑卷存储相关信息
+ansible_memtotal_mb 		//总的内存大小
+ansible_memfree_mb 		//空闲内存大小
+ansible_mounts 			//已挂载的文件系统信息
+ansible_interfaces 			//网络接口列表
+ansible_distribution  		//当前系统的发行版名称
+.. .. 
+
+4）使用debug模块，通过msg参数显示变量的内容、自定义文本
+    ++ 需要在playbook剧本中测试（adhoc方式未搜集信息，会提示变量未定义）
+    ++ 使用msg显示变量时，变量名需要加 {{ }} 括起来
+    ++ 使用var显示变量时，变量名无需 {{ }} 标记；var与msg不能同时使用
+比如：
+[alice@control ansible]$ cat  debug.yml        //编写测试剧本
+---
+- name: debug test
+  hosts: node1
+  tasks:	
+    - debug: msg="{{ansible_all_ipv4_addresses}}"     		//显示系统变量（调用方法1，推荐）
+    - debug: msg="{{ansible_facts.all_ipv4_addresses}}"  	//显示系统变量（调用方法2）
+    - debug: msg="{{ansible_facts.devices.vda.size}}" 		//查看xx变量的某项值
+    - debug: msg="FQDN: {{ansible_fqdn}}"    				//查看完整主机名，可以添加自定义提示
+    - debug: msg="{{ansible_hostname}}"       				//查看主机名
+    - debug: msg="{{ansible_eth0.ipv4.address}}"     		//查看eth0的IP地址
+    - debug: msg="{{ansible_eth0.macaddress}}"    			//查看eth0的MAC地址
+    - debug: msg="{{ansible_bios_version}}"     			//查看主机BIOS版本
+    - debug: msg="{{ansible_devices.vda.size}}"    			 //查看磁盘vda的大小
+    - debug: msg="{{ansible_devices.vda.partitions.vda1.size}}"     //查看分区vda1的大小
+    - debug: msg="{{ansible_lvm.lvs.root.size_g}}"     		//查看名为root的逻辑卷的大小（G）
+    - debug: msg="{{ansible_lvm.vgs.rhel.size_g}}"    		//查看名为rhel的卷组的大小（G）
+    - debug: msg="{{ansible_kernel}}"       				//查看内核版本
+    - debug: msg="{{ansible_eth0.ipv4.address}}"     		//查看主机名
+
+
+[alice@control ansible]$ ansible-playbook debug.yml    		//执行剧本
+
+5）ansible魔法变量
+    ++ 指的是ansible为管理目的而预设的特殊变量
+    ++ 通过adhoc方式或者playbook方式，都可以调用/或者msg查看
+常用魔法变量：
+hostvars  							//包含所有可控清单主机的魔法变量
+hostvars.node1  					//主机node1的魔法变量
+hostvars.node1.group_names 			//主机node1在清单中所在的组名
+group_names 						//当前主机所在的清单组名
+hostvars.node1.inventory_hostname	//主机node1在清单中的主机名
+inventory_hostname	 				//当前主机的清单主机名
+groups								//主控机清单中的所有主机组及成员主机信息
+groups.all 							//主控机清单中的所有主机
+groups.web 							//主控机清单中web组的所有主机

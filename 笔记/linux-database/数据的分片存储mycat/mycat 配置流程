@@ -1,0 +1,667 @@
+数据分片
+
+什么是分库分表
+-将存放在一改数据库服务器中的数据 按照特定方式进行拆分 分散存放到多台数据库服务器中 以达到分散单台服务器负载的效果
+
+分割方式
+-水平分割（横向切分）
+按照表中指定字段的分片规则 将表信息按行切分 分散存储到多个数据库中
+
+-垂直分割（纵向切分）
+将单个数据库的多个表按业务类型分类 分散储存到不同的数据库
+
+mycat 软件介绍
+-mycat 是基于java的分布式数据系统中间件 为高并发环境的分布式储存提供解决方案
+适合数据大量写入的储存需求
+支持mysql oracle sqlserver mongodb等
+提供数据读写分离服务
+提供数据分片服务
+基于阿里巴巴cobar进行研发的开源软件
+
+分片支持的规则（10几种）
+1 枚举法 sharding-by-intfile
+2 固定分片 rule1
+3 范围约定 auto-sharding-long
+4 求模法 mod-long
+5 日期裂分区法 sharding-by-date
+6 通配取模 sharding-by-patterm
+7 ASCCII码法求模通配 sharding-by-prefixpattern
+8 编程指定 shrding-by-substring
+9 字符串拆分hash解析 sharding-by-stringhash
+10 一致性hash sharding-by-murmur
+
+目录结构
+ls /usr/local/mycat/
+bin					//mycat命令
+catlet				//扩展功能 安装扩展软件后自动识别
+cong				//配置文件
+lib					//mycat使用的jar包
+logs				//mycat启动了日志和运行日志
+
+日志文件logs配置文件
+wrapper.log			//报错日志
+mycat.log 			//服务启动日志
+
+重要配置文件说明
+server.xml			//设置连接账号及逻辑库
+schema.xml			//配置数据分片储存的表
+rule.xml 			//分片规则
+其他文件			//分片规则配置文件
+
+
+/usr/local/mycat/conf/server.xml
+定义客户端连接mycat 服务的用户
+
+<user name="用户名">
+	<property name="password">密码</property>
+	<property name="schemas">库名</property>
+<user name="admin">											//
+	<property name="password">123456</property>
+	<property name="schemas">TESTDB</property>
+	<property name="readOnly">trueM</property>				//只读权限
+</user>
+
+[root@host56 conf]# vim  schema.xml
+schema.xml 的配置格式
+<mycat:schema  选项>
+	<schema  选项>    //定义分片表名
+		<table  选项   />     单标签定义表名
+
+		<table  选项> 双表标签定义表名
+		</table >
+	</schema>
+
+	<dataNode 选项  />  定义数据库服务器的主机名
+	<dataHost 选项>  定义数据库服务器ip地址
+                </dataHost>
+</mycat:schema>
+
+详细配置文件详见单独文档
+
+
+配置数据库服务器 53、54、55
+创建存储数据的库
+[root@mysql53 ~]# mysql -uroot -p123qqq...A -e 'grant all on *.* to pljadmin@"%" identified by "123qqq...A"'
+[root@mysql54 ~]# mysql -uroot -p123bbb...A -e 'grant all on *.* to pljadmin@"%" identified by "123qqq...A"'
+[root@mysql55 ~]# mysql -uroot -p123bbb...A -e 'grant all on *.* to pljadmin@"%" identified by "123qqq...A"'
+
+启动mycat服务 并查看服务状态
+[root@host56 ~]# netstat  -utnlp  | grep 8066
+[root@host56 ~]# /usr/local/mycat/bin/mycat --help
+Usage: /usr/local/mycat/bin/mycat { console | start | stop | restart | status | dump }
+[root@host56 ~]# /usr/local/mycat/bin/mycat  status
+[root@host56 ~]# /usr/local/mycat/bin/mycat  start
+
+测试配置
+[root@mysql50 ~]# mysql -h192.168.4.56 -P8066 -uroot -p123456
+mysql> show databases;
++----------+
+| DATABASE |
++----------+
+| TESTDB   |
++----------+
+1 row in set (0.00 sec)
+
+mysql> use TESTDB;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql> show tables;
++------------------+
+| Tables in TESTDB |
++------------------+
+| company          |
+| customer         |
+| customer_addr    |
+| employee         |
+| goods            |
+| hotnews          |
+| orders           |
+| order_items      |
+| travelrecord     |
++------------------+
+9 rows in set (0.00 sec)
+
+mysql>exit;
+
+    
+
+ 三测试配置
+		3.1 数据分片规则的使用
+			3.1.1 枚举法 sharding-by-intfile 字段"值" (必须在 规则文件  定义的值里  选择)
+
+			
+			vim schema.xml
+<table name="employee" primaryKey="ID" dataNode="dn1,dn2,dn3"
+                           rule="sharding-by-intfile" />   查看那张使用枚举法对表记录做分片存储
+
+			
+
+			 
+[root@host56 ~]# vim /usr/local/mycat/conf/rule.xml
+
+      <tableRule name="sharding-by-intfile">
+                <rule>
+                        <columns>sharding_id</columns>   表中分片字段的名字
+                        <algorithm>hash-int</algorithm>
+                </rule>
+        </tableRule>
+
+        <function name="hash-int"  class="io.mycat.route.function.PartitionByFileMap">
+                <property name="mapFile">partition-hash-int.txt</property>  分片规则配置文件
+        </function>
+
+     
+			
+ ]#vim /usr/local/mycat/conf/partition-hash-int.txt     定义分片字段的值  	
+10000=0  （对应dn1服务器）
+10010=1    （对应dn2服务器）
+10020=2（对应dn3服务器）
+:wq
+
+			
+		重启服务让配置生效
+[root@host56 ~]# /usr/local/mycat/bin/mycat  stop
+Stopping Mycat-server...
+Stopped Mycat-server.
+[root@host56 ~]# netstat -utnlp  | grep  8066
+[root@host56 ~]# /usr/local/mycat/bin/mycat  start
+Starting Mycat-server...
+[root@host56 ~]# 
+[root@host56 ~]# netstat -utnlp  | grep  8066
+tcp6       0      0 :::8066                 :::*                    LISTEN      2782/java           
+[root@host56 ~]#  
+
+建表并存储数据
+
+[root@mysql50 ~]# mysql -h192.168.4.56 -P8066 -uroot -p123456
+
+mysql> use TESTDB;		
+mysql> create table employee ( ID int primary key , sharding_id  int , name char(15), age  int );
+Query OK, 0 rows affected (0.01 sec)
+
+mysql> DESC employee;                                                                   
++-------------+----------+------+-----+---------+-------+
+| Field       | Type     | Null | Key | Default | Extra |
++-------------+----------+------+-----+---------+-------+
+| ID          | int(11)  | NO   | PRI | NULL    |       |
+| sharding_id | int(11)  | YES  |     | NULL    |       |
+| name        | char(15) | YES  |     | NULL    |       |
+| age         | int(11)  | YES  |     | NULL    |       |
++-------------+----------+------+-----+---------+-------+
+4 rows in set (0.04 sec)
+
+mysql> 
+
+[root@mysql53 ~]# mysql -uroot -p123qqq...A -e 'desc db1.employee'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-------------+----------+------+-----+---------+-------+
+| Field       | Type     | Null | Key | Default | Extra |
++-------------+----------+------+-----+---------+-------+
+| ID          | int(11)  | NO   | PRI | NULL    |       |
+| sharding_id | int(11)  | YES  |     | NULL    |       |
+| name        | char(15) | YES  |     | NULL    |       |
+| age         | int(11)  | YES  |     | NULL    |       |
++-------------+----------+------+-----+---------+-------+
+[root@mysql53 ~]# 
+
+[root@mysql54 ~]# mysql -uroot -p123bbb...A -e 'desc db2.employee'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-------------+----------+------+-----+---------+-------+
+| Field       | Type     | Null | Key | Default | Extra |
++-------------+----------+------+-----+---------+-------+
+| ID          | int(11)  | NO   | PRI | NULL    |       |
+| sharding_id | int(11)  | YES  |     | NULL    |       |
+| name        | char(15) | YES  |     | NULL    |       |
+| age         | int(11)  | YES  |     | NULL    |       |
++-------------+----------+------+-----+---------+-------+
+[root@mysql54 ~]# 
+[root@mysql55 ~]# mysql -uroot -p123bbb...A -e 'desc db3.employee'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-------------+----------+------+-----+---------+-------+
+| Field       | Type     | Null | Key | Default | Extra |
++-------------+----------+------+-----+---------+-------+
+| ID          | int(11)  | NO   | PRI | NULL    |       |
+| sharding_id | int(11)  | YES  |     | NULL    |       |
+| name        | char(15) | YES  |     | NULL    |       |
+| age         | int(11)  | YES  |     | NULL    |       |
++-------------+----------+------+-----+---------+-------+
+[root@mysql55 ~]# 
+
+
+[root@mysql50 ~]# mysql -h192.168.4.56 -P8066 -uroot -p123456
+mysql> use TESTDB;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql> 
+mysql> 
+mysql> DESC employee;
++-------------+----------+------+-----+---------+-------+
+| Field       | Type     | Null | Key | Default | Extra |
++-------------+----------+------+-----+---------+-------+
+| ID          | int(11)  | NO   | PRI | NULL    |       |
+| sharding_id | int(11)  | YES  |     | NULL    |       |
+| name        | char(15) | YES  |     | NULL    |       |
+| age         | int(11)  | YES  |     | NULL    |       |
++-------------+----------+------+-----+---------+-------+
+4 rows in set (0.01 sec)
+
+mysql> insert into employee values(1,10000,"bob",19);
+ERROR 1064 (HY000): partition table, insert must provide ColumnList
+mysql> 
+mysql> insert into employee(ID , sharding_id , name ,age) values(1,10000,"bob",19);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(2,10000,"boba",18);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(3,10000,"bobc",18);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(4,10010,"tom",18);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(5,10010,"toma",18);
+Query OK, 1 row affected (0.01 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(6,10010,"tomb",18);
+Query OK, 1 row affected (0.01 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(7,10010,"tomd",18);
+Query OK, 1 row affected (0.00 sec)
+
+mysql> select  * from employee;
++----+-------------+------+------+
+| ID | sharding_id | name | age  |
++----+-------------+------+------+
+|  4 |       10010 | tom  |   18 |
+|  5 |       10010 | toma |   18 |
+|  6 |       10010 | tomb |   18 |
+|  7 |       10010 | tomd |   18 |
+|  1 |       10000 | bob  |   19 |
+|  2 |       10000 | boba |   18 |
+|  3 |       10000 | bobc |   18 |
++----+-------------+------+------+
+7 rows in set (0.06 sec)
+
+mysql> insert into employee(ID , sharding_id , name ,age) values(8,10030,"tomf",18);
+ERROR 1064 (HY000): can't find any valid datanode :EMPLOYEE -> SHARDING_ID -> 10030
+mysql> 
+
+
+[root@mysql53 ~]# mysql -uroot -p123qqq...A -e 'select  * from  db1.employee'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+-------------+------+------+
+| ID | sharding_id | name | age  |
++----+-------------+------+------+
+|  1 |       10000 | bob  |   19 |
+|  2 |       10000 | boba |   18 |
+|  3 |       10000 | bobc |   18 |
++----+-------------+------+------+
+[root@mysql53 ~]# 
+
+[root@mysql54 ~]# mysql -uroot -p123bbb...A -e 'select * from  db2.employee'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+-------------+------+------+
+| ID | sharding_id | name | age  |
++----+-------------+------+------+
+|  4 |       10010 | tom  |   18 |
+|  5 |       10010 | toma |   18 |
+|  6 |       10010 | tomb |   18 |
+|  7 |       10010 | tomd |   18 |
++----+-------------+------+------+
+[root@mysql54 ~]# 
+
+[root@mysql55 ~]# mysql -uroot -p123bbb...A -e 'select  * from  db3.employee'
+mysql: [Warning] Using a password on the command line interface can be insecure.
+[root@mysql55 ~]# 
+
+3.1.2 求模法 mod-long （做取余运算）
+			根据字段值 与 设定的数字  求模结果  存储数据
+
+                                     	查看使用求模法存储数据的表名 schema.xml
+<table name="hotnews"  dataNode="dn1,dn2,dn3"
+                           rule="mod-long" />
+
+			查看表的分片字段名  rule.xml
+
+ <tableRule name="mod-long">
+                <rule>
+                        <columns>num</columns>  修改了分片字段名
+                        <algorithm>mod-long</algorithm>
+                </rule>
+        </tableRule>
+		             查看算法 设置取余运算的数字
+
+        <function name="mod-long" class="io.mycat.route.function.PartitionByMod">
+                <!-- how many data nodes -->
+                <property name="count">3</property>
+        </function>
+
+		            重启mycat服务
+
+       [root@host56 ~]# /usr/local/mycat/bin/mycat  stop
+Stopping Mycat-server...
+Stopped Mycat-server.
+[root@host56 ~]# 
+[root@host56 ~]# netstat  -utnlp  | grep 8066
+[root@host56 ~]# 
+[root@host56 ~]# /usr/local/mycat/bin/mycat  start
+Starting Mycat-server...
+
+[root@host56 ~]# 
+[root@host56 ~]# netstat  -utnlp  | grep 8066
+tcp6       0      0 :::8066                 :::*                    LISTEN      3013/java           
+[root@host56 ~]# 
+                
+
+                		建表并存储数据
+[root@mysql50 ~]# mysql -h192.168.4.56 -P8066 -uroot -p123456
+mysql> desc hotnews;
+ERROR 1146 (42S02): Table 'db1.hotnews' doesn't exist
+
+mysql> create table hotnews(  id  int primary key auto_increment , num int , title  char(10) , woker char(10) , comment varchar(100) );
+
+
+mysql> insert into hotnews(id ,num , title, woker , comment) values (null,7,"A","AA","AAA"),(null,7,"B","BB","BBB"),(null,10,"c","cc","CCC");
+Query OK, 3 rows affected (0.01 sec)
+Records: 3  Duplicates: 0  Warnings: 0
+
+mysql> select  * from hotnews;
++----+------+-------+-------+---------+
+| id | num  | title | woker | comment |
++----+------+-------+-------+---------+
+|  1 |    7 | A     | AA    | AAA     |
+|  2 |    7 | B     | BB    | BBB     |
+|  3 |   10 | c     | cc    | CCC     |
++----+------+-------+-------+---------+
+3 rows in set (0.04 sec)
+
+mysql> 
+mysql> insert into hotnews(id ,num , title, woker , comment) values (null,6,"A","AA","AAA"),(null,6,"B","BB","BBB"),(null,6,"c","cc","CCC");
+Query OK, 3 rows affected (0.00 sec)
+Records: 3  Duplicates: 0  Warnings: 0
+
+mysql> select  * from hotnews;                                                          
++----+------+-------+-------+---------+
+| id | num  | title | woker | comment |
++----+------+-------+-------+---------+
+|  1 |    6 | A     | AA    | AAA     |
+|  2 |    6 | B     | BB    | BBB     |
+|  3 |    6 | c     | cc    | CCC     |
+|  1 |    7 | A     | AA    | AAA     |
+|  2 |    7 | B     | BB    | BBB     |
+|  3 |   10 | c     | cc    | CCC     |
++----+------+-------+-------+---------+
+6 rows in set (0.01 sec)
+
+mysql> 
+mysql> insert into hotnews(id ,num , title, woker , comment) values (null,11,"A","AA","AAA")；
+Query OK, 3 rows affected (0.01 sec)
+Records: 3  Duplicates: 0  Warnings: 0
+
+mysql> 
+mysql> 
+mysql> insert into hotnews(id ,num , title, woker , comment) values (null,10,"A","AA","AAA"),(null,12,"B","BB","BBB"),(null,11,"c","cc","CCC");
+Query OK, 3 rows affected (0.00 sec)
+
+mysql> select  * from hotnews;
++----+------+-------+-------+---------+
+| id | num  | title | woker | comment |
++----+------+-------+-------+---------+
+|  1 |    6 | A     | AA    | AAA     |
+|  2 |    6 | B     | BB    | BBB     |
+|  3 |    6 | c     | cc    | CCC     |
+|  4 |   12 | B     | BB    | BBB     |
+|  1 |    7 | A     | AA    | AAA     |
+|  2 |    7 | B     | BB    | BBB     |
+|  3 |   10 | c     | cc    | CCC     |
+|  4 |   10 | A     | AA    | AAA     |
+|  1 |   11 | A     | AA    | AAA     |
+|  2 |   11 | B     | BB    | BBB     |
+|  3 |   11 | c     | cc    | CCC     |
+|  4 |   11 | c     | cc    | CCC     |
++----+------+-------+-------+---------+
+12 rows in set (0.01 sec)
+
+mysql> 
+[root@mysql53 ~]# mysql -uroot -p123qqq...A -e 'select  * from  db1.hotnews'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+------+-------+-------+---------+
+| id | num  | title | woker | comment |
++----+------+-------+-------+---------+
+|  1 |    6 | A     | AA    | AAA     |
+|  2 |    6 | B     | BB    | BBB     |
+|  3 |    6 | c     | cc    | CCC     |
+|  4 |   12 | B     | BB    | BBB     |
++----+------+-------+-------+---------+
+[root@mysql53 ~]# 
+
+[root@mysql54 ~]# mysql -uroot -p123bbb...A -e 'select * from  db2.hotnews'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+------+-------+-------+---------+
+| id | num  | title | woker | comment |
++----+------+-------+-------+---------+
+|  1 |    7 | A     | AA    | AAA     |
+|  2 |    7 | B     | BB    | BBB     |
+|  3 |   10 | c     | cc    | CCC     |
+|  4 |   10 | A     | AA    | AAA     |
++----+------+-------+-------+---------+
+[root@mysql54 ~]# 
+
+[root@mysql55 ~]# mysql -uroot -p123bbb...A -e 'select  * from  db3.hotnews'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++----+------+-------+-------+---------+
+| id | num  | title | woker | comment |
++----+------+-------+-------+---------+
+|  1 |   11 | A     | AA    | AAA     |
+|  2 |   11 | B     | BB    | BBB     |
+|  3 |   11 | c     | cc    | CCC     |
+|  4 |   11 | c     | cc    | CCC     |
++----+------+-------+-------+---------+
+[root@mysql55 ~]# 
+
+
+                +++++++添加新库新表++++++++++
+
+
+		添加新的数据库
+
+[root@host56 ~]# vim /usr/local/mycat/conf/server.xml
+  <user name="root">
+                <property name="password">123456</property>
+                <property name="schemas">TESTDB,BBSDB</property> 添加库名
+        </user>
+
+        <user name="user">
+                <property name="password">user</property>
+                <property name="schemas">TESTDB,BBSDB</property> 添加库名
+                <property name="readOnly">true</property>
+        </user>
+:wq
+
+		添加新的
+[root@host56 ~]# vim /usr/local/mycat/conf/schema.xml
+<mycat:schema xmlns:mycat="http://io.mycat/"> 在下方添加如下行
+        <schema name="BBSDB" checkSQLschema="false" sqlMaxLimit="100">
+                <table name="user" dataNode="dn1,dn2,dn3"  rule="mod-long" />
+                <table name="pay"  dataNode="dn1,dn2,dn3"  type="global" />
+        </schema>
+:wq
+
+		重启mycat服务
+[root@host56 ~]# /usr/local/mycat/bin/mycat  stop
+[root@host56 ~]# /usr/local/mycat/bin/mycat  start
+Starting Mycat-server...
+[root@host56 ~]# 
+[root@host56 ~]# 
+[root@host56 ~]# netstat  -utnlp  | grep 8066
+tcp6       0      0 :::8066                 :::*                    LISTEN      3943/java           
+[root@host56 ~]#
+
+	          在客户端50 连接56主机 查看新库新表 存储数据
+[root@mysql50 ~]# mysql -h192.168.4.56 -P8066 -uroot -p123456
+mysql> show databases;
++----------+
+| DATABASE |
++----------+
+| BBSDB    |
+| TESTDB   |
++----------+
+2 rows in set (0.00 sec)
+
+mysql> 
+mysql> use BBSDB;
+Reading table information for completion of table and column names
+You can turn off this feature to get a quicker startup with -A
+
+Database changed
+mysql> show tables;
++-----------------+
+| Tables in BBSDB |
++-----------------+
+| pay             |
+| user            |
++-----------------+
+2 rows in set (0.00 sec)
+
+mysql>
+mysql> create table  pay (name char(10) ,age int);
+Query OK, 0 rows affected (0.02 sec)
+
+mysql> desc pay;
++-------+----------+------+-----+---------+-------+
+| Field | Type     | Null | Key | Default | Extra |
++-------+----------+------+-----+---------+-------+
+| name  | char(10) | YES  |     | NULL    |       |
+| age   | int(11)  | YES  |     | NULL    |       |
++-------+----------+------+-----+---------+-------+
+2 rows in set (0.00 sec)
+
+mysql> insert into pay(name,age)values("bob",29),("tom",31),("jerry",40);
+Query OK, 3 rows affected (0.04 sec)
+Records: 3  Duplicates: 0  Warnings: 0
+
+mysql> select  * from pay;
++-------+------+
+| name  | age  |
++-------+------+
+| bob   |   29 |
+| tom   |   31 |
+| jerry |   40 |
++-------+------+
+3 rows in set (0.05 sec)
+
+mysql> 
+
+[root@mysql53 ~]# mysql -uroot -p123qqq...A -e 'select  * from  db1.pay'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-------+------+
+| name  | age  |
++-------+------+
+| bob   |   29 |
+| tom   |   31 |
+| jerry |   40 |
++-------+------+
+[root@mysql53 ~]# 
+[root@mysql54 ~]# mysql -uroot -p123bbb...A -e 'select * from  db2.pay'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-------+------+
+| name  | age  |
++-------+------+
+| bob   |   29 |
+| tom   |   31 |
+| jerry |   40 |
++-------+------+
+[root@mysql54 ~]# 
+[root@mysql55 ~]# mysql -uroot -p123bbb...A -e 'select  * from  db3.pay'
+mysql: [Warning] Using a password on the command line interface can be insecure.
++-------+------+
+| name  | age  |
++-------+------+
+| bob   |   29 |
+| tom   |   31 |
+| jerry |   40 |
++-------+------+
+[root@mysql55 ~]# 
+
+
+
+
+
+
+
+
+
+
+
+
+配置文件说明
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+部署mycat服
+56 systemctl stop mysqld ;  systemctl  disable  mysqld
+53 、54 、55 、56  关闭 firewalld  禁用selinux
+
+在56 主机部署mycat服务
+安装软件 Mycat-server-1.6-RELEASE-20161028204710-linux.tar.gz
+yum  -y   install  java-1.8.0-openjdk.x86_64				//部署java jdk 工具环境
+java -version												//查看版本信息 
+
+解压mycat 的压缩包
+[root@host56 ~]# tar -zxvf Mycat-server-1.6-RELEASE-20161028204710-linux.tar.gz 
+[root@host56 ~]# mv mycat /usr/local/
+[root@host56 ~]# ls /usr/local/mycat/
+bin  catlet  conf  lib  logs  version.txt
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

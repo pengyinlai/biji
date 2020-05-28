@@ -194,7 +194,7 @@ vim newhosts.yml
             {% elif 'test02' in group_names %}
             test02
             {% elif 'web' in group_names %}
-            webserver
+            Webserver
             {% endif  %}
         dest: /etc/issue
 

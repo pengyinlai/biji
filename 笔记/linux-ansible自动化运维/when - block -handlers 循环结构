@@ -1,0 +1,145 @@
+
+【使用when条件】
+when条件用来判断系统指标，当满足条件时才会执行某个任务
+常见条件操作符如下：==、!=、>、>=、<、<=、in、not in
+使用and或or可以组合多个条件
+when表达式中调用变量时，不需要使用 {{  }}
+
+比如：
+[alice@control ansible]$ cat  when.yml 
+---
+- name: when test
+  hosts: node1,node3
+  tasks:
+    - file: path="/tmp/yes.txt" state=touch    //在目录/tmp/下创建文件yes.txt
+      when: ('web' in group_names)     //当主机属于web组时执行
+    - debug: msg="vg myvg not found"     //显示一段文本
+      when: ('myvg' not in ansible_lvm.vgs)   //当卷组myvg不存在时
+...
+
+failed_when中断控制
+failed_when条件的用法与when类似
+但是当满足failed_when的条件时，playbook就认为失败，不再执行后续任务
+
+block语句块的使用
+block语句可以将多个任务操作捆绑到一起，当成一个整体
+当满足when条件后要执行多个操作时，就可以使用block把这些操作捆在一块
+当然，when条件也不是必需的，可以只是捆绑多个任务
+rescue抢救机制（非必需），当block任务失败时，可以执行rescue任务
+always完结机制（非必需），无论block任务是否成功，最后都去执行always任务
+比如：
+    block: 
+        - 任务1: .. ..
+        - 任务2: .. ..
+    when：条件测试
+    rescue：
+        - 任务3: .. ..
+        - 任务4: .. ..
+    always: 
+        - 任务5: .. ..
+—— 执行结果是：
+    当条件测试不成立时，任务1-5都不执行
+    当条件测试成立时，执行任务1、任务2；如果任务1、2中有失败的，则执行任务3、4
+    当条件测试成立时，任务5始终都会执行
+
+比如：
+[alice@control ansible]$ cat  block.yml
+---
+- name: block test
+  hosts: node1
+  tasks:
+    - block:
+        - debug: msg="vg myvg not found"   //提示卷组没找到
+        - debug: msg="create vg myvg .. .."   //做其他操作（比如创建这个卷组...）
+      when: ('myvg' not in ansible_lvm.vgs)   //当卷组myvg不存在时
+      rescue:
+        - debug: msg="creating failed .. .."     //block失败时提示创建卷组失败
+      always:
+        - shell: vgscan          //列出卷组信息
+          register: list         //保存到名为list的变量
+        - debug: msg={{list.stdout_lines}}     //提示卷组扫描结果
+...
+
+
+andlers任务处理（布雷）、notify通知触发（引爆）
+handlers可以设置一个或一块任务，仅当收到某个任务通知时才会执行
+每个剧情中handlers任务只会执行一次，即使收到多个任务的触发通知
+handlers组的每一个任务都要设置名称（name）
+handlers的层次与tasks平级
+其他任务在必要时，使用notify语句通知handlers任务名
+仅当发起notify的任务的执行状态为changed时，handlers任务才会被执行
+比如：
+[alice@control ansible]$ cat  handlers.yml 
+---
+- name: handlers test
+  hosts: node5
+  tasks:
+    - lvol: lv=vo001 size=100M vg=search   //创建逻辑卷vo001
+      notify: mkfs     //如果changed则通知格式化（否则无需格式化）
+  handlers:
+    - name: mkfs     //定义格式化操作处理
+      filesystem: dev=/dev/search/vo001 fstype=xfs force=yes 
+...
+
+
+【loop】
+
+
+使用loop循环
+通过loop语句可以构造一个值列表（队列）
+针对loop队列中的值，可以共享同一个任务操作，从而节省代码量、提高效率
+任务要调用队列中的值时，使用固定变量 {{item}}
+比如：
+[alice@control ansible]$ cat  lamp.yml
+---
+- name: Deploy LAMP Platform
+  hosts: host1
+  tasks:
+  - name: install LAMP packages
+    yum: name:={{item}}  state=present  //调用循环变量（固定名称item）
+    loop:         //配置列表循环项
+        - httpd
+        - mariadb
+        - mariadb-server
+        - php
+        - php-mysqlnd
+  - name: enable LAMP services
+    service: name={{item}}  state=started  enabled=yes
+    loop:
+        - httpd
+        - mariadb
+...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

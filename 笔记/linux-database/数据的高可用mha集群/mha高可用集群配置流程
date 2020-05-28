@@ -1,0 +1,525 @@
+案例1：准备MHA集群环境 
+2. 案例2：部署MHA集群 
+3. 案例3：测试配置 
+ 
+1 案例1：准备MHA集群环境
+
+1.1 问题
+•配置SSH免密登录 
+•安装依赖包 
+•配置MySQL一主多从结构 
+
+
+
+准备5台虚拟机，角色规划如图-1所示。
+实现此案例需要按照如下步骤进行。
+
+
+
+【步骤一： 配置ssh免密登录】
+1）配置数据库服务器192.168.4.51（多台数据库之间互作免密连接 每台主机在未来都有可能作为主服务器）
+[root@host51 ~]# ssh-keygen //创建秘钥对
+[root@host51 ~]# ssh-copy-id root@192.168.4.52 //传递公钥给host52主机
+[root@host51 ~]# ssh-copy-id root@192.168.4.53 //传递公钥给host53主机
+2）配置数据库服务器192.168.4.52
+[root@host52 ~]# ssh-keygen //创建秘钥对
+[root@host51 ~]# ssh-copy-id root@192.168.4.51 //传递公钥给host52主机
+[root@host53 ~]# ssh-copy-id root@192.168.4.53 //传递公钥给host53主机
+3）配置数据库服务器192.168.4.53
+[root@host53 ~]# ssh-keygen //创建秘钥对
+[root@host52 ~]# ssh-copy-id root@192.168.4.52 //传递公钥给host52主机
+[root@host53 ~]# ssh-copy-id root@192.168.4.53 //传递公钥给host53主机
+
+4）配置管理服务器192.168.4.57（为mha服务器配置无密连接）
+[root@mgm57 ~]# ssh-keygen //创建秘钥对
+[root@mgm57 ~]# ssh-copy-id root@192.168.4.51 //传递公钥给host51主机
+[root@mgm57 ~]# ssh-copy-id root@192.168.4.52 //传递公钥给host52主机
+[root@mgm57 ~]# ssh-copy-id root@192.168.4.53 //传递公钥给host52主机
+
+
+
+【步骤二： 安装依赖包】mha使用perl语言写的所以需要装依赖解释器
+1）配置数据库服务器192.168.4.51
+[root@host51 ~]# yum -y install perl-* //安装系统自带的perl软件包
+[root@host51 ~]# cd mha-soft-student	//软件下载的位置
+[root@host51 ~]# yum –y install perl-* //安装共享的perl软件包
+
+2）配置数据库服务器192.168.4.52
+[root@host52 ~]# yum  -y  install   perl-*  //安装系统自带的perl软件包
+[root@host52 ~]#  cd  mha-soft-student      
+[root@host52 ~]#  yum  –y  install  perl-*  //安装共享的perl软件包[root@localhost 
+
+3）配置数据库服务器192.168.4.53
+[root@host53 ~]# yum -y install perl-* //安装系统自带的perl软件包
+[root@host53 ~]# cd mha-soft-student
+[root@host53 ~]# yum –y install perl-* //安装共享的perl软件包
+
+4）配置管理服务器192.168.4.57
+[root@mgm57 ~]# yum -y install perl-* //安装系统自带的perl软件包
+[root@mgm57 ~]# cd mha-soft-student
+[root@mgm57 ~]# yum –y install perl-* //安装共享的perl软件包
+
+
+
+【步骤三： 配置MySQL一主多从结构】
+1）配置主服务器192.168.4.51
+[root@host51 ~]# vim /etc/my.cnf
+[mysqld]
+log-bin=master51 	//日志名
+server_id=51 		//指定server_id
+[root@host51 ~]# systemctl  restart  mysqld		//重启服务
+
+[root@host51 ~]# mysql  -uroot  -p123qqq…A
+ mysql> grant  replication slave  on  *.*  to repluser@"%"  identified by “123qqq…A";	 //添加从服务器同步数据连接用户
+mysql> show master status;																 //查看日志信息
+.mysql: [Warning] Using a password on the command line interface can be insecure.
+12.+-----------------+----------+--------------+------------------+-------------------+
+13.| File            | Position | Binlog_Do_DB | Binlog_Ignore_DB | Executed_Gtid_Set |
+14.+-----------------+----------+--------------+------------------+-------------------+
+15.| master51.000001 |     441 |              |                  |                   |
+16.+-----------------+----------+--------------+------------------+-------------------+
+17.[root@host51 ~]#
+
+
+2）配置从服务器192.168.4.52
+[root@host52 ~]# vim /etc/my.cnf
+[mysqld]
+server_id=52 //指定server_id
+
+[root@host52 ~]# systemctl restart mysqld	//重启数据库服务
+[root@host52 ~]# mysql -uroot –p123qqq…A 	//数据库管理员登录
+mysql> change master to 					//指定主服务器信息
+master_host="192.168.4.51", 				//IP地址
+master_user="repluser",						 //授权用户
+master_password="123qqq...A", 				//授权用户密码
+master_log_file="master51.000001",			 //binlog日志
+master_log_pos=441; 						//偏移量
+mysql> start slave; 						//启动slave进程
+mysql> exit ; //断开连接
+
+
+3）配置从服务器192.168.4.53
+[root@host53 ~]# vim /etc/my.cnf
+[mysqld]
+server_id=53 //指定server_id
+
+[root@host53 ~]# systemctl restart mysqld 	//重启数据库服务
+[root@host53 ~]# mysql -uroot –p123qqq…A 	//数据库管理员登录
+mysql> change master to 					//指定主服务器信息
+master_host="192.168.4.51", 				//IP地址
+master_user="repluser", 					//授权用户
+master_password="123qqq...A", 				//授权用户密码
+master_log_file="master51.000001", 			//binlog日志
+master_log_pos=441; 						//偏移量
+mysql> start slave; 						//启动slave进程
+mysql> exit ; 								//断开连接
+
+
+ 
+2 案例2：部署MHA集群
+
+2.1 问题
+•配置管理节点 
+•配置数据节点 
+
+
+【步骤一：配置管理节点57】
+
+1）安装软件
+01.[root@mgm57 ~]# cd mha-soft-student/
+02.[root@mgm57 mha-soft-student]#
+03.[root@mgm57 mha-soft-student]# rpm -ivh  mha4mysql-node-0.56-0.el6.noarch.rpm		//安装mha-node软件包
+09.[root@mgm57 mha-soft-student]# rpm -qa | grep  mha 									//查看是否安装成功
+10.mha4mysql-node-0.56-0.el6.noarch
+
+11.[root@mgm57 mha-soft-student]#
+13.[root@mgm57 mha-soft-student]# tar -zxvf mha4mysql-manager-0.56.tar.gz 				//解压mha-manager软件包
+14.mha4mysql-manager-0.56/
+15.mha4mysql-manager-0.56/debian/
+16.mha4mysql-manager-0.56/debian/control
+17.mha4mysql-manager-0.56/debian/copyright
+
+
+[root@mgm57 mha-soft-student]# ls  
+app1.cnf            mha4mysql-manager-0.56        
+mha4mysql-node-0.56-0.el6.noarch.rpm
+master_ip_failover  mha4mysql-manager-0.56.tar.gz
+
+26.[root@mgm57 mha-soft-student]# cd mha4mysql-manager-0.56  //进入源码目录
+27.[root@mgm57 mha4mysql-manager-0.56]# ls					 //查看文件列表
+28.AUTHORS  COPYING  inc  Makefile.PL  META.yml  rpm      t
+29.bin      debian   lib  MANIFEST     README    samples  tests
+30.[root@mgm57 mha4mysql-manager-0.56]#
+31.
+32.[root@mgm57 mha4mysql-manager-0.56]# perl Makefile.PL 	 //配置
+33.*** Module::AutoInstall version 1.03
+34.*** Checking for Perl dependencies...
+35.[Core Features]
+36.- DBI                   ...loaded. (1.627)
+37.- DBD::mysql            ...loaded. (4.023)
+38.- Time::HiRes           ...loaded. (1.9725)
+39.- Config::Tiny          ...loaded. (2.14)
+40.- Log::Dispatch         ...loaded. (2.41)
+41.- Parallel::ForkManager ...loaded. (1.18)
+42.- MHA::NodeConst        ...loaded. (0.56)
+
+48.[root@mgm57 mha4mysql-manager-0.56]#  make 							//编译
+49.[root@mgm57 mha4mysql-manager-0.56]#  make install 					//安装
+50.
+51.[root@mgm57 mha4mysql-manager-0.56]# ls /root/perl5/bin 				 //查看安装的命令
+52.masterha_check_repl    masterha_conf_host       masterha_master_switch
+53.masterha_check_ssh     masterha_manager         masterha_secondary_check
+54.masterha_check_status  masterha_master_monitor  masterha_stop
+
+
+
+2）编辑主配置文件
+01.[root@mgm57 ~ ]#  mkdir  /etc/mha  											//创建工作目录
+02.[root@mgm57 ~ ]#  cp mha4mysql-manager-0.56/sample/conf/app1.cnf /etc/mha/ 	//拷贝模板文件
+03.[root@mgm57 ~ ]#  vim /etc/mha/app1.cnf  								 	//编辑主配置文件
+04.[server default]     									//管理服务默认配置
+05.manager_workdir=/etc/mha    								//工作目录
+06. manager_log=/etc/mha/manager.log  					 	//日志文件
+07.master_ip_failover_script=/etc/mha/master_ip_failover 	//故障切换脚本
+08.ssh_user=root  											//访问ssh服务用户
+09.ssh_port=22    											//ssh服务端口
+10.
+11.repl_user=repluser          								 //主服务器数据同步授权用户
+12.repl_password=123qqq…A    								 //密码
+13.
+14. user=root                   	//监控用户
+15. password=123qqq…A               //密码
+16.[server1]   						//指定第1台数据库服务器
+17.hostname=192.168.4.51    		//服务器ip地址
+18.port=3306                		//服务端口
+19.candidate_master=1               //竞选主服务器
+20.
+21.[server2]  						//指定第2台数据库服务器
+22.hostname=192.168.4.52
+23.port=3306
+24.candidate_master=1  
+25.            
+26.[server3]  						//指定第3台数据库服务器
+27.hostname=192.168.4.53
+28.port=3306
+29.candidate_master=1
+30.:wq
+
+
+
+3）创建故障切换脚本
+01.[root@mgm57 ~]# cp mha-soft-student/master_ip_failover /etc/mha/
+03.[root@mgm57 ~]# vim +35 /etc/mha/master_ip_failover
+04.my $vip = '192.168.4.100/24';  # Virtual IP 			    //定义VIP地址
+05.my $key = "1"; 											//定义变量$key
+06.my $ssh_start_vip = "/sbin/ifconfig eth0:$key $vip"; 	//部署vip地址命令
+07.my $ssh_stop_vip = "/sbin/ifconfig eth0:$key down"; 		//释放vip地址命令
+08.:wq
+09.[root@mgm57 ~]# chmod +x  /etc/mha/master_ip_failover	 //给脚本加执行权限
+
+
+4）在当前主服务器部署vip地址（只需要第一次给主机）
+01.[root@host51 ~]# ifconfig  eth0:1  					//部署之前查看 
+05.[root@host51 ~]# ifconfig  eth0:1  192.168.4.100 	 //部署vip地址
+07.[root@host51 ~]# ifconfig  eth0:1 					//部署后查看
+
+
+
+
+【步骤二：配置数据节点】
+
+1）在所有数据库服务器上，安装mha-node软件包
+01.]# cd /root/mha-soft-student/
+02.]#  rpm -ivh mha4mysql-node-0.56-0.el6.noarch.rpm
+
+
+2）在所有数据服务器上添加监控用户（要和mha的配置文件中指定的一致）
+可以只在host51主机执行授权命令，host52和host53 会自动同步授权
+01.]# mysql –uroot –p密码
+02.mysql> grant all on  *.*  to root@"%" identified by "123qqq...A";
+
+
+
+
+3）在2台从服务器上添加，数据同步连接用户（每台服务器都有可能成为主服务器）
+在从服务器host52添加用户
+01.[root@host52]# mysql –uroot –p密码
+02.mysql> grant replication slave on  *.*  to repluser@"%" identified by "123qqq...A";
+03.mysql> exit;
+
+在从服务器host53添加用户
+01.[root@host53]# mysql –uroot –p密码
+02.mysql> grant replication slave on  *.*  to repluser@"%" identified by "123qqq...A";
+03.mysql> exit;
+
+
+
+4）修改数据库服务运行参数（启用半同步模式）
+修改主服务器host51
+01.[root@host51 ~]# vim /etc/my.cnf
+02.[mysqld]
+03.plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so" //加载模块
+04.rpl_semi_sync_master_enabled=1 																 //启用master模块
+05.rpl_semi_sync_slave_enabled=1    															 //启用slave模块
+06.relay_log_purge=0  																			 //禁止自动删除中继日志文件
+07.:wq
+08.[root@host51 ~]#  systemctl  restart  mysqld  												//重启服务
+
+
+
+修改从服务器host52
+01.[root@host52 ~]# vim /etc/my.cnf
+02.[mysqld]
+03.log-bin=master52
+04.plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"	 //加载模块
+05.rpl_semi_sync_master_enabled=1  																	//启用master模块
+06.rpl_semi_sync_slave_enabled=1   																  //启用slave模块
+07.relay_log_purge=0  																			 //禁止自动删除中继日志文件	
+09.[root@host52 ~]#  systemctl  restart  mysqld  												//重启服务
+
+
+
+修改从服务器host53
+[root@host53 ~]# vim /etc/my.cnf
+[mysqld]
+log-bin=master53
+plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so" //加载模块
+rpl_semi_sync_master_enabled=1 												//启用master模块
+rpl_semi_sync_slave_enabled=1 												//启用slave模块
+relay_log_purge=0 															//禁止自动删除中继日志文件
+[root@host53 ~]# systemctl restart mysqld 									//重启服务
+ 
+ 
+【案例3：测试配置】
+
+3.1 问题
+•测试集群环境 
+•访问集群 
+•测试高可用 
+•修复故障服务器 
+
+3.2 步骤
+
+实现此案例需要按照如下步骤进行。
+
+步骤一：测试集群环境
+
+1）在管理主机，测试ssh配置
+01. [root@mgm57 ~]# masterha_check_ssh --conf=/etc/mha/app1.cnf				 //执行测试命令
+Thu Jun 20 15:33:51 2019 - [info] All SSH connection tests passed successfully.//测试成功提示
+
+2）在管理主机，测试主从同步
+[root@host57 ~]# masterha_check_repl --conf=/etc/mha/app1.cnf 		//执行测试命令
+MySQL Replication Health is OK.//测试成功提示信息
+
+
+3）启动管理服务
+01.[root@mgm57 ~]# masterha_manager --conf=/etc/mha/app1.cnf  --remove_dead_master_conf  --ignore_last_failover   /执行启动命令（忽。。。）
+
+
+4）查看服务状态
+01.[root@mgm57 ~]#  masterha_check_status  --conf=/etc/mha/app1.cnf			//执行命令
+02.app1 (pid:15806) is running(0:PING_OK), master:192.168.4.51 				//服务运行，监视主服务器192.168.4.51
+03.[root@mgm57 ~]# ls /etc/mha/   											//查看工作目录文件列表
+
+
+【步骤二：访问集群】
+
+1）在主服务器51 添加访问数据的连接用户
+01.]# mysql  -uroot -p123qqq...A
+02.mysql> create database db9;				//创建一个库
+05.mysql> create table db9.a (id int);		//创建一个表
+08.mysql> grant select,insert on db9.* to yaya55@"%" identified by "123qqq...A";//授权用户
+11.mysql>exit
+
+
+
+2）客户端50 连接vip地址访问集群
+01.host50~]# mysql -h192.168.4.100  -uyaya55  -p123qqq...A
+02.mysql> select  * from  db9.a;
+03.mysql> insert into db9.a values(100);
+04.mysql> select  * from db9.a;
+05.+------+
+06.| id   |
+07.+------+
+08.|  100 |
+09.+------+
+10.1 row in set (0.00 sec)
+11.mysql>exit
+
+
+
+3）在从服务器host52 查看数据
+01. [root@host52 ~]# mysql -uroot -p123qqq...A -e "select  * from db9.a"
+02.mysql: [Warning] Using a password on the command line interface can be insecure.
+03.+------+
+04.| id   |
+05.+------+
+06.|  100 |
+07.+------+
+
+
+
+4）在从服务器host53 查看数据
+01.[root@host53 ~]# mysql -uroot -p123qqq...A -e "select  * from db9.a"
+02.mysql: [Warning] Using a password on the command line interface can be insecure.
+03.+------+
+04.| id   |
+05.+------+
+06.|  100 |
+07.+------+
+
+
+
+【步骤三：测试高可用】
+
+1）停止主服务器51的mysql服务
+01.host51~]# systemctl  stop  mysqld
+
+
+2）查看管理服务 ，输出的监控信息
+01. [root@mgm57~]#masterha_manager --conf=/etc/mha/app1.cnf  --remove_dead_master_conf \
+17.[root@mgm57 ~]# masterha_check_status  --conf=/etc/mha/app1.cnf
+18.app1 is stopped(2:NOT_RUNNING).  //监控到主服务器宕机 管理服务自动停止
+19.[root@mgm57 ~]#
+
+
+
+3）客户端依然连接vip地址，可以访问到数据
+01.client50]# ping -c 2 192.168.4.100 			 			//能够ping通vip地址
+10.client50]# mysql -h192.168.4.100 -uyaya55 -p123qqq...A //连接vip地址
+11.mysql> insert into db9.a values(200); 					//插入记录
+12.mysql> select  * from db9.a;								//查询记录
+13.+------+
+14.| id   |
+15.+------+
+16.|  100 |
+17.|  200 |
+18.+------+
+
+
+
+4）查看vip地址
+
+在host52主机查看到vip地址，说明host52 主机被选举为主服务器
+01. [root@host52 ~]# ifconfig  eth0:1
+02.eth0:1: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+03.        inet 192.168.4.100  netmask 255.255.255.0  broadcast 192.168.4.255
+04.        ether 52:54:00:f5:c4:6a  txqueuelen 1000  (Ethernet)
+
+
+
+在host53主机未查看到vip地址，说明host53主机是当前host52的从服务器
+
+01. [root@host53 ~]# ifconfig  eth0:1 //未查到vip地址
+02.eth0:1: flags=4163<UP,BROADCAST,RUNNING,MULTICAST>  mtu 1500
+03.        ether 52:54:00:28:22:2e  txqueuelen 1000  (Ethernet)
+04.
+05.[root@host53 ~]# mysql -uroot -p123qqq...A -e "show slave status\G" | grep -i 192   ////主服务器Ip地址
+08、
+06.mysql: [Warning] Using a password on the command line interface can be insecure.
+07.                  Master_Host: 192.168.4.52  //主服务器Ip地址
+08.[root@host53 ~]#
+09.[root@host53 ~]# mysql -uroot -p123qqq...A -e "show slave status\G" | grep -i yes
+10.mysql: [Warning] Using a password on the command line interface can be insecure.
+11.             Slave_IO_Running: Yes  //IO线程正常
+12.            Slave_SQL_Running: Yes  //SQL线程正常
+13.
+14. [root@host53 ~]# mysql -uroot -p123qqq...A -e "select  * from db9.a" //自动同步数据
+15.mysql: [Warning] Using a password on the command line interface can be insecure.
+16.+------+
+17.| id   |
+18.+------+
+19.|  100 |
+20.|  200 |
+21.+------+
+
+
+
+【步骤四：修复故障服务器】
+1）配置数据库服务器
+启动host51主机的数据库服务
+01.host51~]# systemctl  start  mysqld
+与主服务器数据一致
+01.[root@host52 ~]#  mysqldump -uroot -p123qqq...A  --master-data  db9 > db9.sql 		//在主服务器host52 做完全备份
+02.mysqldump: [Warning] Using a password on the command line interface can be insecure.
+05.[root@host52 ~]# scp db9.sql  root@192.168.4.51:/root/ 							 //拷贝备份文件给host51主机
+09.host51 ~]# mysql -uroot -p123qqq...A db9 < /root/db9.sql//host51 				//主机使用备份文件恢复数据
+
+
+
+
+指定主服务器信息
+01. [root@host51 ~]# grep master52 /root/db9.sql  			//查看日志名及偏移量
+02.CHANGE MASTER TO MASTER_LOG_FILE='master52.000001', MASTER_LOG_POS=895;
+03.
+04.[root@host51 ~]# mysql -uroot -p123qqq...A
+05.mysql>change master to master_host="192.168.4.52",master_user="repluser",master_password="123qqq...A",master_log_file="master52.000001",master_log_pos=895;
+06.Query OK, 0 rows affected, 2 warnings (0.14 sec)
+
+
+
+启动slave进程
+01.mysql> start slave;
+02.Query OK, 0 rows affected (0.01 sec)
+03.Mysql> exit ;
+
+查看状态信息
+
+01. [root@host51 ~]# mysql -uroot -p123qqq...A -e "show slave status\G" |grep 192.168.4.52
+02.mysql: [Warning] Using a password on the command line interface can be insecure.
+03.                  Master_Host: 192.168.4.52 //主服务器ip地址
+04.
+05.[root@host51 ~]#
+06.[root@host51 ~]# mysql -uroot -p123qqq...A -e "show slave status\G" |grep -i yes
+07.mysql: [Warning] Using a password on the command line interface can be insecure.
+08.             Slave_IO_Running: Yes //IO线程状态正常
+09.            Slave_SQL_Running: Yes //SQL线程状态正常
+10.[root@host51 ~]#
+
+
+
+2）配置管理服务器
+
+修改配置文件，添加数据库服务器host51
+
+
+
+
+01.]# vim /etc/mha/app1.cnf
+02. [server1 ]
+03.hostname=192.168.4.51
+04.port=3306
+05.candidate_master=1
+06.:wq
+
+
+
+测试集群环境
+
+
+
+
+01.[root@mgm57 ~]# masterha_check_ssh --conf=/etc/mha/app1.cnf //测试SSH
+91.MySQL Replication Health is OK. //成功
+
+
+
+重启管理服务
+01.]# masterha_stop  --conf=/etc/mha/app1.cnf //停止管理服务
+02.Stopped app1 successfully.
+03.
+04.]# masterha_manager --conf=/etc/mha/app1.cnf  --remove_dead_master_conf \
+05.--ignore_last_failover //启动管理服务
+06.
+07.Thu Jun 20 17:05:58 2019 - [warning] Global configuration file /etc/masterha_default.cnf not found. Skipping.
+08.Thu Jun 20 17:05:58 2019 - [info] Reading application default configuration from /etc/mha/app1.cnf..
+09.Thu Jun 20 17:05:58 2019 - [info] Reading server configuration from /etc/mha/app1.cnf..
+
+
+
+查看状态
+01.mgm57 ~]# masterha_check_status  --conf=/etc/mha/app1.cnf
+02.app1 (pid:15806) is running(0:PING_OK), master:192.168.4.52 //服务运行，监视服务器52
+03.[root@mgm57 ~]#
+

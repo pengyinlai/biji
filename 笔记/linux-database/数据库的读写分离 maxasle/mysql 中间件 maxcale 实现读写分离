@@ -1,0 +1,93 @@
+数据库读写分离
+
+一 数据读写分离
+1. 1  数据读写分离介绍
+1. 2  为什么要使用数据读写分离服务结构存储数据
+1. 3  实现数据读写分离的手段？
+		通过程序员写代码实现
+		由mysql代理面向客户端识点提供服务
+			收到sql 写的请求时 交友master服务器处理
+			收到sql  读的请求时 交由slave 服务器处理
+	  架设数据读写分离功能服务器区分
+
+构建思路
+部署mysql 一主一从结构
+主服务器
+从服务器
+部署mysql代理服务器
+-装包 修改配置文件 启动服务
+测试配置
+-客户端连接代理服务器访问数据
+
+
+ 安装软件maxscale-2.1.2-1.rhel.7.x86_64.rpm	
+ 下载地址https://downloads.mariadb.com/files/MaxScale
+[root@HOST57 ~]# rpm -ivh  maxscale-2.1.2-1.rhel.7.x86_64.rpm
+
+/etc/masscale.cnf			//主配置文件
+/var/log/maxscale/*			//日志文件
+
+配置数据库服务器51 和52： 在数据服务器授权用户plja 和pljb
+//在主从连个服务器授权两个用户	（用户授权）
+[root@mysql51 ~]# mysql -uroot -p123bbb...A  -e '  grant replication slave, replication client on *.* to  plja@"%" identified by "123qqq...A"'
+[root@mysql51 ~]# mysql -uroot -p123bbb...A  -e '  grant select on mysql.* to  pljb@"%" identified by "123qqq...A"'
+[root@mysql51 ~]# mysql -uroot -p123bbb...A  -e ' select  user from mysql.user where user in ("plja","pljb")'	//检查用户	
+[root@mysql52 ~]# mysql -uroot -p123bbb...A  -e ' select  user from mysql.user where user in ("plja","pljb")'	//检查从服务器是否同步新建用户
+
+启动maxscale服务
+[root@HOST57 ~]# maxscale  -f /etc/maxscale.cnf			//启动服务
+[root@HOST57 ~]# netstat  -utnlp  | grep maxscale		//检查服务状态和进程号
+[root@HOST57 ~]# kill -9 1459							//杀死进程
+[root@HOST57 ~]# ls /var/log/maxscale/					//日志文件位置
+
+
+测试配置
+在读写分离服务器57本机，查看监控信息
+[root@HOST57 ~]# maxadmin -uadmin  -pmariadb -P4016
+MaxScale> list servers
+Servers.
+-------------------+-----------------+-------+-------------+--------------------
+Server             | Address         | Port  | Connections | Status              
+-------------------+-----------------+-------+-------------+--------------------
+server1            | 192.168.4.51    |  3306 |           0 | Master, Running
+server2            | 192.168.4.52    |  3306 |           0 | Slave, Running
+-------------------+-----------------+-------+-------------+-------------------
+
+
+在主数据库服务器51授权用户给客户端连接使用
+mysql> create database gamedb;					//新建授权用户用的库
+mysql> create table gamedb.user(id int);		//键表
+mysql> grant select , insert on gamedb.* to yaya99@"%" identified by "123qqq...A";				//授权用户指定可读可插入指定库的权限
+[root@mysql52 ~]# mysql -uroot -p123bbb...A -e 'select user from mysql.user where user="yaya99"'//查看授权用户权限
+
+
+客户端50主机链接读写分离服务器57 访问数据
+[root@mysql50 ~]# mysql -h192.168.4.57 -P4006 -uyaya999 -p123qqq...A 	//用客户机登录中间件客户机测试读写分离
+mysql> show grants;														//查看用户权限
++----------------------------------------------------+
+| Grants for yaya99@%                                |
++----------------------------------------------------+
+| GRANT USAGE ON *.* TO 'yaya99'@'%'                 |
+| GRANT SELECT, INSERT ON `gamedb`.* TO 'yaya99'@'%' |
++----------------------------------------------------+
+//可以测试插入 查看命令 测试读写分离是否成功
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

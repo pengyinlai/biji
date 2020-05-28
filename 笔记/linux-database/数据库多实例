@@ -1,0 +1,88 @@
+MySQL多实例 （一台数据同时运行多台数据库服务器）
+
+软件 mysql-5.7.20-linux-glibc2.12-x86_64.tar.gz
+在一台主机运行2个mysql数据库服务，都必须有独立的：
+数据库目录
+端口号
+日志文件
+pid号文件
+socket文件（套接字文件）
+
+
+1 安装软件
+[root@host58 ~]# tar -zxvf  mysql-5.7.20-linux-glibc2.12-x86_64.tar.gz
+[root@host58 ~]# mv mysql-5.7.20-linux-glibc2.12-x86_64 /usr/local/mysql（免安装软件）
+
+内置文件
+[root@host58 ~]# cd /usr/local/mysql/
+[root@host58 mysql]# ls
+bin  COPYING  docs  include  lib  man  README  share  support-files
+
+运行环境配置
+[root@host58 mysql]# PATH=/usr/local/mysql/bin:$PATH	//定义变量文件 可以在控制台任何位置执行命令来
+[root@host58 mysql]# echo  "PATH=/usr/local/mysql/bin:$PATH" >> /etc/bashrc		//定义开机启动有效文件
+[root@host58 mysql]# mysqld_   （按2次tab键可以补全命令）
+mysqld_multi        mysqld_pre_systemd  mysqld_safe         
+[root@host58 mysql]#
+或这个
+[root@host58 mysql]# which  mysqld_multi
+/usr/local/mysql/bin/mysqld_multi
+[root@host58 mysql]# 
+
+创建并编辑主配置文件 vim /etc/my.cnf
+ [mysqld_multi]
+mysqld = /usr/local/mysql/bin/mysqld_safe
+mysqladmin = /usr/local/mysql/bin/mysqladmin
+user = root
+
+[mysqld1]
+datadir = /dir1
+port = 3307 
+log-error = /dir1/mysqld1.error
+pid-file = /dir1/mysqld1.pid
+socket = /dir1/mysqld1.sock
+
+[mysqld2]
+datadir = /dir2
+port = 3308 
+log-error = /dir2/mysqld2.error
+pid-file = /dir2/mysqld2.pid
+socket = /dir2/mysqld2.sock
+:wq
+ 
+
+启动实例服务并访问
+]# id mysql || useradd  mysq		//创建执行用户
+]# rpm -q libaio ||  yum  -y  install libaio	//安装依赖
+
+[root@host58 mysql]# mysqld_multi start  1			//运行程序’1‘是在cnf定义的服务编号 第一次运行会有初始密码
+[root@host58 mysql]# netstat  -utnlp  | grep mysqld	// 查看状态
+使用管理员初始密码登录
+[root@host58 mysql]# mysql -uroot -p'3llTUDukkJ(E'  -S  /dir1/mysqld1.sock  //访问多实例服务
+mysql> alter user root@"localhost" identified by "123456";//修改初始密码
+
+
+停止某个实例
+]# mysqld_multi --user=root  --password=密码  stop  实例编号    	//停止服务
+[root@host58 mysql]# netstat  -utnlp  | grep mysqld //查看状态
+
+
+ 让客户端可以访问58主机实例2服务，并且启用实例2   binlog日志文件
+
+vim /etc/my.cnf  
+[mysqld2]
+server_id = 2  手动添加
+log_bin = plj  手动添加
+在本机登录的mysql 命令中授权其他主机访问的权限
+[root@mysql50 ~]# mysql -h192.168.4.58 -P3308 -ujing3 -p123456	//其他主机登录命令语法
+
+
+
+
+
+
+
+
+
+
+

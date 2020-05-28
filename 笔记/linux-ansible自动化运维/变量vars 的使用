@@ -1,0 +1,97 @@
+在playbook中使用变量：
+
+使用vars列表项定义
+
+比如：
+[alice@control ansible]$ cat  var.yml     //定义v1、v2两个变量
+---
+- name: vars test
+  hosts: node1
+  vars:        //直接定义变量
+    - yonghu: zhsan
+    - mima: ab1234
+  tasks:
+    - debug:
+        msg:  msg="username:{{yonghu}}, password:{{mima}}"
+...
+[alice@control ansible]$ ansible-playbook  var.yml     //测试剧本
+.. ..
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "username:zhsan, password:ab1234"
+}
+.. ..
+
+
+使用vars_files列表项定义，从外部变量文件加载变量
+
+比如：
+[alice@control ansible]$ cat  vars_files.yml 
+---
+- name: vars_files test
+  hosts: node1
+  vars_files:       //调用变量文件
+    - v3v4.txt
+  tasks:
+    - debug: msg="username:{{yonghu}}, password:{{mima}}"
+...
+[alice@control ansible]$ ansible-playbook vars_files.yml 
+.. .. 
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "username:lisi, password:cd5678"
+}
+.. ..
+
+
+使用vars_prompt从键盘输入变量值
+比如：
+[alice@control ansible]$ cat  vars_prompt.yml 
+---
+- name: vars_prompt test
+  hosts: node1
+  vars_prompt:     //人机交互为变量赋值
+    - name: ilogin
+      prompt: "login"
+      private: no     //回显  
+    - name: ipass
+      prompt: "password"
+      private: yes     //不回显（缺省）
+  tasks:
+    - name: create an user
+      user: name="{{ilogin}}" password="{{ ipass | password_hash('sha512') }}"
+...
+
+[alice@control ansible]$ ansible-playbook vars_prompt.yml   //执行剧本
+login: wangwu     	//输入用户名
+password:      		//输入密码（不显示）
+.. ..
+[alice@control ansible]$ ansible  node1  -a  'id  wangwu'   //检查结果
+node1 | CHANGED | rc=0 >>
+uid=1002(wangwu) gid=1004(wangwu) groups=1004(wangwu)
+
+
+通过register模块保存命令结果（类似于Shell的重定向）
+[alice@control ansible]$ cat  register.yml
+---
+- name: register test
+  hosts: node1
+  ignore_errors: yes        //即使遇到错误，仍然执行后续操作
+  tasks:
+    - shell: ls -lh  /etc/hosts  /etc/null
+      register: result       			//将屏幕输出保存到result变量
+    - debug: msg="{{result.stdout}}"    //提取标准输出
+    - debug: msg="{{result.stderr}}"    ：//提权标准错误
+    - debug: msg="{{result}}"     		//提取变量result的所有内容
+...
+[alice@control ansible]$ ansible-playbook register.yml     //执行剧本
+.. ..
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "-rw-r--r--. 1 root root 617 Mar 27 19:10 /etc/hosts"
+}
+TASK [debug] ***************************************************************************************
+ok: [node1] => {
+    "msg": "ls: cannot access '/etc/null': No such file or directory"
+}
+.. ..

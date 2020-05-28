@@ -1,0 +1,36 @@
+主从同步—复制模式
+
+复制模式： 主服务器执行完一次事务后 立即将结果返给客户端  不关心服务器是否已经同步数据
+
+半同步夫复制： 介于异步复制和全同步复制之间 主服务器在执行完一次事务后 等待至少一台从服务器同步数据完成 才将结果返回给客户端。
+
+模式配置
+查看是否允许动态加载模块（默认是允许的）
+mysal>show variables like "have_dynamis_loading" ; 	//查看变量
+
+命令行配置
+使用数据库管理员root用户连接服务配置（安装模块）
+mysql> insert plugin rpl_semi_sync_master  SONAME "semisync_master.so" ; //主服务器执行
+mysql> insert plugin rpl_semi_sync_slave  SONAME "semisync_slave.so" ; //主服务器执行
+mysql> select plugin_name, plugin_status from information_schema.plugins where plugin_name like "%semi%" ;
+ //查看
+
+启用半同步模式（默认是关闭的）
+mysql> set global rpl_semi_sync_master_enabled=1 ;		//主服务器执行
+mysql> set global rpl_semi_sync_slave_enabled=1 ;		//从服务器执行
+mysql> show variables like "rpl_semi_sync_%_enabled" ;   //查看
+
+
+永久启用半同复制
+修改主配置文件/etc/my.cnf
+主服务器
+[mysqld]
+plugin-load="rpl_semi_sync_master=semisync_master.so;rpl_semi_sync_slave=semisync_slave.so"
+rpl_semi_sync_master_enabled=1
+rpl_semi_sync_slave_enabled=1
+relay_log_purge=0
+安装并启用主从角色数据库服务的半同步复制模式
+从数据库服务器上禁止自动删除本机的中继日志文件
+
+
+

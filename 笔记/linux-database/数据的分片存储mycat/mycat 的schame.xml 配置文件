@@ -1,0 +1,91 @@
+d'dot@host56 conf]#  cat  schema.xml  (文件中的注释行可以自己手动删除)
+<?xml version="1.0"?>
+<!DOCTYPE mycat:schema SYSTEM "schema.dtd">
+<mycat:schema xmlns:mycat="http://io.mycat/">
+
+	<schema name="TESTDB" checkSQLschema="false" sqlMaxLimit="100">		//定义分片信息
+		<table name="travelrecord" dataNode="dn1,dn2,dn3" rule="auto-sharding-long" />	//定义表
+
+		<table name="company" primaryKey="ID" type="global" dataNode="dn1,dn2,dn3" />
+		<table name="goods" primaryKey="ID" type="global" dataNode="dn1,dn2,dn3" />
+		<table name="hotnews" primaryKey="ID" autoIncrement="true" dataNode="dn1,dn2,dn3"
+			   rule="mod-long" />
+		<table name="employee" primaryKey="ID" dataNode="dn1,dn2,dn3"
+			   rule="sharding-by-intfile" />
+		<table name="customer" primaryKey="ID" dataNode="dn1,dn2,dn3"
+			   rule="sharding-by-intfile">
+			<childTable name="orders" primaryKey="ID" joinKey="customer_id"
+						parentKey="id">
+				<childTable name="order_items" joinKey="order_id"
+							parentKey="id" />
+			</childTable>
+			<childTable name="customer_addr" primaryKey="ID" joinKey="customer_id"
+						parentKey="id" />
+		</table>
+	</schema>
+	
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++	
+	//<schema> ....<schema>   定义分片信息
+	//<table>.....<table>		定义表信息
+	//name		如果写在schema内是定义逻辑库名  在table 标签内是定义逻辑表名
+	//dataNode  指定数据节点
+	//rule      指定使用的分片规则
+	//type=global  数据不分片存储
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++	
+	
+
+	<dataNode name="dn1" dataHost="mysql53" database="db1" />
+	<dataNode name="dn2" dataHost="mysql54" database="db2" />
+	<dataNode name="dn3" dataHost="mysql55" database="db3" />
+	
+	
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+		//<dataNode 选项=值，.../>		定义数据节点
+		//name                          数据节点名
+		//datahost                      数据库服务器主机名
+		//database                      数据库名
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+	
+	
+
+	<dataHost name="mysql53" maxCon="1000" minCon="10" balance="0"
+			  writeType="0" dbType="mysql" dbDriver="native" switchType="1"  slaveThreshold="100">
+		<heartbeat>select user()</heartbeat>
+		<writeHost host="hostM1" url="192.168.4.53:3306" user="pljadmin"  password="123qqq...A">
+		</writeHost>
+	</dataHost>
+
+    <dataHost name="mysql54" maxCon="1000" minCon="10" balance="0"  writeType="0" dbType="mysql" dbDriver="native" switchType="1"  slaveThreshold="100">
+                <heartbeat>select user()</heartbeat>
+                <writeHost host="hostM2" url="192.168.4.54:3306" user="pljadmin"   password="123qqq...A">                
+               </writeHost>        
+    </dataHost>
+
+	<dataHost name="mysql55" maxCon="1000" minCon="10" balance="0"  writeType="0" dbType="mysql" dbDriver="native" switchType="1"  slaveThreshold="100">
+                <heartbeat>select user()</heartbeat>
+                <writeHost host="hostM3" url="192.168.4.55:3306" user="pljadmin"  password="123qqq...A">                
+               </writeHost>
+    </dataHost>
+
+
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+<dataHost 选项=值，...> ...</datahost>  服务器主机名
+name                                    主机名（与datahost对应的主机名）
+host                                    主机名（与）
+++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++++
+
+
+
+
+
+
+
+
+
+
+
+
+
+</mycat:schema>
+[root@host56 conf]# 
+    

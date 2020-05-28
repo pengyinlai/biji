@@ -1,0 +1,154 @@
+【ansible角色】
+什么是角色：
+roles指的是，为了方便管理重复调用的大批量playbook剧本，而定义的一套目录结构规范
+针对每一个角色，ansible会到固定的目录去调取特定的数据
+
+比如，名为 nginx 的角色目录构成：
+nginx/ 				//角色根目录
+nginx/tasks/main.yml 		//任务入口，最主要的文件
+nginx/defualts/main.yml 		//定义变量的缺省值，优先级较低
+nginx/files/ 			//存放静态文件
+nginx/handlers/main.yml 		//定义handlers处理任务
+nginx/meta/main.yml 		//定义作者、版本等描述信息
+nginx/README.md 			//整个角色的描述信息
+nginx/templates/ 			//存放模板文件
+nginx/vars/main.yml 		//定义角色变量，优先级高
+
+【关于rhel-system-roles软件包】：
+安装后会提供一组由红帽预先设置好的角色，方便用来管理RHEL系统
+比如 timesync、kdump、network、postfix、……等等
+默认位置 /usr/share/ansible/roles/*，可以按需复制到用户的roles目录下使用
+
+
+设置角色变量：
+通过修改角色目录下的 vars/main.yml 文件，可以定义角色变量
+比如：
+[alice@control ansible]$ cp  -r  /usr/share/ansible/roles/rhel-system-roles.timesync  roles/
+[alice@control ansible]$ vim  roles/rhel-system-roles.timesync/vars/main.yml
+.. ..
+timesync_ntp_servers:
+  - hostname: 172.25.254.250
+    iburst: yes
+
+通过playbook剧本调用xx系统角色：
+使用roles语句，指定角色名称即可调用角色任务、变量等批量数据
+比如：
+[alice@control ansible]$ cat  timesync.yml
+---
+- name: timesync
+  hosts: all
+  roles:
+    - rhel-system-roles.timesync      //调用xx角色
+...
+
+
+通过galaxy安装角色
+ansible-galaxy工具的作用：
+galaxy的本意为“银河系”，ansible-galaxy工具可以用来统一管理大量角色
+联网情况下，可以通过ansible-galaxy工具访问ansible官网的公共仓库 https://galaxy.ansible.com/api/
+
+基本用法：
+[alice@control ansible]$ ansible-galaxy  list 						//列出已经安装的角色
+.. ..        
+[alice@control ansible]$ ansible-galaxy  init  roles/myrole			//创建名为myrole的自定义角色（目录结构）
+.. ..       
+[alice@control ansible]$ ansible-galaxy  remove  myrole				//删除名为myrole的角色
+.. ..       
+[alice@control ansible]$ ansible-galaxy  search  nginx				//从ansible官网搜索可用的角色（需联网
+.. ..       ）
+[alice@control ansible]$ ansible-galaxy  info  haproxy  --offline	 //查询已安装的haproxy角色的描述信息
+.. ..      
+[alice@control ansible]$ ansible-galaxy  install  -r  角色列表文件	 //根据角色列表文件的定义，下载并安装新的角色
+.. ..       
+比如：
+[alice@control ansible]$ vim  roles/down.yml     //配置角色导入信息
+- name: haproxy           								 //指定角色1的新名称
+  src: http://study.lab0.example.com/roles/haproxy.tar   //指定角色tar包的下载地址
+- name: myphp           								 //指定角色2的新名称
+  src: acandid.httpd     								 //通过名称直接从ansible官网下载（需联网）
+
+
+创建及使用自定义角色
+1）使用template模块，从模板上传文件
+基本用法：
+
+ansible  清单主机  -m  template  -a  '任务参数'
+    ++ src=模板文件路径  		//指定被复制的本地文件（必选参数）
+    ++ dest=目标文件路径  		//指定上传到目标主机的新文件（必选参数）
+    ++ force="yes|no"  			//目标文件已存在时是否替换
+    ++ owner=属主 				//指定新文件的属主
+    ++ group=属组 				//指定新文件的属组
+    ++ mode=权限标记 			//指定新文件的权限
+    ++ setype=SELinux类型 		//指定新文件的SELinux标签类型
+比如：
+[alice@control ansible]$ ansible  node1  -m  template  -a  'src=welcome.html  dest=/tmp/welcome.html mode=644  force=yes'	//上传文件到主机node1，强制覆盖
+.. ..         
+[alice@control ansible]$ ansible  node1  -a  'ls  -lh /tmp/welcome.html'
+node1 | CHANGED | rc=0 >>
+-rw-r--r--. 1 root root 23 Apr 17 07:22 /tmp/welcome.html	//检查结果
+.. ..         
+
+
+使用ansile-galaxy初始化自定义角色
+ ansible-galaxy  init  roles/角色名
+比如：
+[alice@control ansible]$ ansible-galaxy  init  roles/httpd
+.. ..
+
+定义角色模板（template/xxxx.j2），方便嵌入变量
+在角色目录下的 template/ 子目录中，可以存放模板文件
+ 模板文件可以嵌入变量，使新文件的内容更灵活
+
+比如：
+[alice@control ansible]$ vim  roles/httpd/templates/index.html.j2
+Welcome to {{ansible_fqdn}} on {{ansible_eth0.ipv4.address}}
+
+定义角色任务（task/main.yml）
+修改角色的主任务剧本时，只需要指定核心任务操作
+不要指定 hosts 清单主机
+
+比如：
+[alice@control ansible]$ vim  roles/httpd/tasks/main.yml
+- name: 1. install httpd     //装包
+yum: pkg=httpd state=present
+- name: 2. deploy index.html     //配置网页资源
+template: src=index.html.j2 dest=/var/www/html/index.html
+- name: 3. httpd       //起服务
+service: name=httpd state=restarted enabled=yes
+.. ..
+
+在剧本中调用自定义角色
+方法与调用其他角色的方法一样
+都是使用 roles: 语句
+比如：
+[alice@control ansible]$ cat  myrole.yml
+---
+- name: use role
+  hosts: webtest
+  roles:
+    - httpd
+...
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+

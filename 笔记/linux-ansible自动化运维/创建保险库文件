@@ -1,0 +1,20 @@
+创建保险库文件
+ansible的vault保险库：
+    ++ 为了方便保护一些敏感文件（如账号的密码）而设置的文件加密机制
+    ++ 加密/解密主要工具 ansible-vault
+    ++ 通过ansible-playbook调用保险库文件时，添加 --ask-vault-pass 选项会提示从键盘输入密码
+    ++ 需要验证密码的地方，都可以添加 --vault-password-file= 来指定密码文件以免除交互
+    ++ 在重设密码时，可以添加 --new-vault-password-file 来指定存放新密码的文件
+
+ansible-vault基本操作（以下为手动验密）：
+[alice@control ansible]$ ansible-vault  create  new.txt   //直接创建新加密文件
+.. .. //根据提示设置密码
+[alice@control ansible]$ ansible-vault  view  new.txt   //查看已加密的文件
+.. .. //根据提示输入正确的密码验证
+[alice@control ansible]$ ansible-vault  decrypt  new.txt   //将文件解密（恢复成明文数据）
+.. .. //根据提示输入正确的密码验证
+[alice@control ansible]$ ansible-vault  encrypt  new.txt   //将现有文件加密（变成密文）
+.. .. //根据提示设置密码
+[alice@control ansible]$ ansible-vault  rekey  new.txt   //修改已加密文件的密码
+.. .. //根据提示验证旧密码
+.. .. //再设置新密码
