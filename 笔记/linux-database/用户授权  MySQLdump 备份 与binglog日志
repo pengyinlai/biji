@@ -68,12 +68,12 @@ flush privileges;	//刷新系统
 
 
 【数据备份-完全备份-物理备份】
-tar  -zcf /opt/mysql.tar.gz  /var/lib/mysql/*		//打包备份的数据库文件
+tar  -zcf /opt/mysql.tar.gz  /var/lib/mysql/*			//打包备份的数据库文件
 scp -r /opt/mysql.tar.gz 新的主机IP地址：/opt/			//拷贝备份文件到目标主机
 tar -xf /opt/mysql.tar.gz -C /opt/				//解包
 rm -rf  /var/lib/mysql/*
-cp -r /opt/*  /var/lib/mysql/		//把备份文件考到目标路径
-systemctl restart mysqld			//重启服务
+cp -r /opt/*  /var/lib/mysql/					//把备份文件考到目标路径
+systemctl restart mysqld						//重启服务
 
 
 

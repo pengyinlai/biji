@@ -290,7 +290,7 @@ relay_log_purge=0 															//禁止自动删除中继日志文件
 [root@host53 ~]# systemctl restart mysqld 									//重启服务
  
  
-【案例3：测试配置】
+【案例3：启动并测试配置】
 
 3.1 问题
 •测试集群环境 
@@ -454,7 +454,7 @@ MySQL Replication Health is OK.//测试成功提示信息
 02.CHANGE MASTER TO MASTER_LOG_FILE='master52.000001', MASTER_LOG_POS=895;
 03.
 04.[root@host51 ~]# mysql -uroot -p123qqq...A
-05.mysql>change master to master_host="192.168.4.52",master_user="repluser",master_password="123qqq...A",master_log_file="master52.000001",master_log_pos=895;
+05.mysql>change master to master_host="192.168.4.52",master_user="repluser",master_password="123qqq...A",master_log_file="master52.000001",master_log_pos=895;		//查看日志偏移量
 06.Query OK, 0 rows affected, 2 warnings (0.14 sec)
 
 
@@ -468,7 +468,7 @@ MySQL Replication Health is OK.//测试成功提示信息
 
 01. [root@host51 ~]# mysql -uroot -p123qqq...A -e "show slave status\G" |grep 192.168.4.52
 02.mysql: [Warning] Using a password on the command line interface can be insecure.
-03.                  Master_Host: 192.168.4.52 //主服务器ip地址
+03.Master_Host: 192.168.4.52 //主服务器ip地址
 04.
 05.[root@host51 ~]#
 06.[root@host51 ~]# mysql -uroot -p123qqq...A -e "show slave status\G" |grep -i yes

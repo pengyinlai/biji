@@ -145,14 +145,14 @@ vim web.yml
   hosts: all
   tasks:
     - name: failed when vg search not found
-      debug: msg="insufficient free space"
+      debug: msg="VG not found"
       when: "'search' not in ansible_facts.lvm.vgs"
       failed_when: "'search' not in ansible_facts.lvm.vgs"
     - block:
         - lvol: lv=mylv size=1000M vg=search
           notify: qibao
       rescue:
-        - debug: msg="VG not found"
+        - debug: msg="insufficient free space"
         - lvol: lv=mylv size=500M vg=search
           notify: qibao
   handlers:
