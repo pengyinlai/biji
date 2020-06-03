@@ -1,0 +1,543 @@
+案例1：安装软件 
+2. 案例2：配置服务 
+3. 案例3：测试配置 
+4. 案例4：MySQL存储引擎的配置 
+5. 案例5：事务特性 
+ 
+1 案例1：安装软件
+
+1.1 问题
+•环境准备 
+•安装软件包 
+1. 
+
+1.2 方案
+
+准备3台虚拟主机，配置ip地址和主机名。具体如图-1所示：（不需要安装任何MySQL服务软件）
+
+ 
+图-1
+
+1.3 步骤
+
+实现此案例需要按照如下步骤进行。
+
+步骤一：环境准备
+
+配置主机名与ip地址绑定
+
+配置服务器192.168.4.71
+
+
+
+
+01.]#  vim /etc/hosts
+02.192.168.4.71     pxcnode71
+03.192.168.4.72     pxcnode72
+04.192.168.4.73     pxcnode73 
+05.:wq
+06.]#hostname  pxcnode71
+
+
+
+配置服务器192.168.4.72
+
+
+
+
+01.]#  vim /etc/hosts
+02.192.168.4.71     pxcnode71
+03.192.168.4.72     pxcnode72
+04.192.168.4.73     pxcnode73 
+05.:wq
+06.]#hostname  pxcnode72
+
+
+
+配置服务器192.168.4.73
+
+
+
+
+01.]#  vim /etc/hosts
+02.192.168.4.71     pxcnode71
+03.192.168.4.72     pxcnode72
+04.192.168.4.73     pxcnode73 
+05.:wq
+06.]#hostname  pxcnode73
+
+
+
+在任意一台服务器上ping 对方的主机名，ping通为配置成功。
+
+
+
+
+01.[root@host71 ~]# ping -c 2  pxcnode71  //成功
+02.PING pxcnode71 (192.168.4.71) 56(84) bytes of data.
+03.64 bytes from pxcnode71 (192.168.4.71): icmp_seq=1 ttl=255 time=0.011 ms
+04.64 bytes from pxcnode71 (192.168.4.71): icmp_seq=2 ttl=255 time=0.020 ms
+05.
+06.--- pxcnode71 ping statistics ---
+07.2 packets transmitted, 2 received, 0% packet loss, time 999ms
+08.rtt min/avg/max/mdev = 0.011/0.015/0.020/0.006 ms
+09.[root@host71 ~]# 
+10.[root@host71 ~]# 
+11.[root@host71 ~]# ping -c 2  pxcnode72 //成功
+12.PING pxcnode72 (192.168.4.72) 56(84) bytes of data.
+13.64 bytes from pxcnode72 (192.168.4.72): icmp_seq=1 ttl=255 time=0.113 ms
+14.64 bytes from pxcnode72 (192.168.4.72): icmp_seq=2 ttl=255 time=0.170 ms
+15.
+16.--- pxcnode72 ping statistics ---
+17.2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+18.rtt min/avg/max/mdev = 0.113/0.141/0.170/0.030 ms
+19.[root@host71 ~]# 
+20.[root@host71 ~]# 
+21.[root@host71 ~]# ping -c 2  pxcnode73 //成功
+22.PING pxcnode73 (192.168.4.73) 56(84) bytes of data.
+23.64 bytes from pxcnode73 (192.168.4.73): icmp_seq=1 ttl=255 time=0.198 ms
+24.64 bytes from pxcnode73 (192.168.4.73): icmp_seq=2 ttl=255 time=0.155 ms
+25.
+26.--- pxcnode73 ping statistics ---
+27.2 packets transmitted, 2 received, 0% packet loss, time 1000ms
+28.rtt min/avg/max/mdev = 0.155/0.176/0.198/0.025 ms
+29.[root@host71 ~]#
+
+
+
+步骤二：安装软件包
+
+1）在192.168.4.71 服务器安装软件包
+
+软件包之间有依赖注意软件包安装顺序
+
+
+
+
+01.]# rpm -ivh libev-4.15-1.el6.rf.x86_64.rpm    //安装依赖
+02.]# yum  -y  install  percona-xtrabackup-24-2.4.13-1.el7.x86_64.rpm
+03.
+04. ]# rpm -ivh qpress-1.1-14.11.x86_64.rpm     //安装依赖
+05. ]# tar -xvf  Percona-XtraDB-Cluster-5.7.25-31.35-r463-el7-x86_64-bundle.tar
+06. ]# yum -y  install  Percona-XtraDB-Cluster-*.rpm
+
+
+
+2）在192.168.4.72 服务器安装软件包
+
+
+
+
+01.]# rpm -ivh libev-4.15-1.el6.rf.x86_64.rpm    //安装依赖
+02.]# yum  -y  install  percona-xtrabackup-24-2.4.13-1.el7.x86_64.rpm
+03.]# rpm -ivh qpress-1.1-14.11.x86_64.rpm     //安装依赖
+04.]# tar -xvf  Percona-XtraDB-Cluster-5.7.25-31.35-r463-el7-x86_64-bundle.tar
+05.]# yum -y  install  Percona-XtraDB-Cluster-*.rpm
+
+
+
+3）在192.168.4.73 服务器安装软件包
+
+
+
+
+01.]# rpm -ivh libev-4.15-1.el6.rf.x86_64.rpm    //安装依赖
+02.]# yum  -y  install  percona-xtrabackup-24-2.4.13-1.el7.x86_64.rpm
+03.]# rpm -ivh qpress-1.1-14.11.x86_64.rpm     //安装依赖
+04.]# tar -xvf  Percona-XtraDB-Cluster-5.7.25-31.35-r463-el7-x86_64-bundle.tar
+05.]# yum -y  install  Percona-XtraDB-Cluster-*.rpm
+
+
+ 
+2 案例2：配置服务
+
+2.1 问题
+•修改mysqld.cnf文件 
+•修改mysqld_safe.cnf文件 
+•修改wsrap.cnf文件 
+•启动服务 
+1. 
+
+2.2 步骤
+
+实现此案例需要按照如下步骤进行。
+
+步骤一：修改mysqld.cnf文件
+
+
+
+
+01.[root@pxcnode71 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld.cnf
+02.[mysqld]
+03.server-id=71                      //server-id 不允许重复
+04.datadir=/var/lib/mysql                  //数据库目录
+05.socket=/var/lib/mysql/mysql.sock         //socket文件
+06.log-error=/var/log/mysqld.log        //日志文件
+07.pid-file=/var/run/mysqld/mysqld.pid    //pid文件
+08.log-bin                    //启用binlog日志
+09.log_slave_updates            //启用链式复制
+10.expire_logs_days=7            //日志文件保留天数
+11.:wq
+
+
+
+修改服务器192.168.4.72
+
+
+
+
+01.[root@pxcnode72 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld.cnf
+02.[mysqld]
+03.server-id=72                      //server-id 不允许重复
+04.datadir=/var/lib/mysql                  //数据库目录
+05.socket=/var/lib/mysql/mysql.sock         //socket文件
+06.log-error=/var/log/mysqld.log        //日志文件
+07.pid-file=/var/run/mysqld/mysqld.pid    //pid文件
+08.log-bin                    //启用binlog日志
+09.log_slave_updates            //启用链式复制
+10.expire_logs_days=7            //日志文件保留天数
+11.:wq
+
+
+
+修改服务器192.168.4.73
+
+
+
+
+01.[root@pxcnode73 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld.cnf
+02.[mysqld]
+03.server-id=73                      //server-id 不允许重复
+04.datadir=/var/lib/mysql                  //数据库目录
+05.socket=/var/lib/mysql/mysql.sock         //socket文件
+06.log-error=/var/log/mysqld.log        //日志文件
+07.pid-file=/var/run/mysqld/mysqld.pid    //pid文件
+08.log-bin                    //启用binlog日志
+09.log_slave_updates            //启用链式复制
+10.expire_logs_days=7            //日志文件保留天数
+11.:wq
+
+
+
+步骤二：修改mysqld_safe.cnf文件
+
+1）分别修改3台服务器的mysqld_safe.cnf （使用默认配置即可）
+
+
+
+
+01.[root@pxcnode71 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld_safe.cnf
+02.[mysqld_safe]
+03.pid-file = /var/run/mysqld/mysqld.pid
+04.socket   = /var/lib/mysql/mysql.sock
+05.nice     = 0
+06.:wq
+
+
+
+修改服务器192.168.4.72
+
+
+
+
+01.[root@pxcnode72 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld_safe.cnf
+02.[mysqld_safe]
+03.pid-file = /var/run/mysqld/mysqld.pid
+04.socket   = /var/lib/mysql/mysql.sock
+05.nice     = 0
+06.:wq
+
+
+
+修改服务器192.168.4.73
+
+
+
+
+01.[root@pxcnode73 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld_safe.cnf
+02.[mysqld_safe]
+03.pid-file = /var/run/mysqld/mysqld.pid
+04.socket   = /var/lib/mysql/mysql.sock
+05.nice     = 0
+06.:wq
+
+
+
+步骤三：修改wsrep.cnf文件
+
+1）分别修改3台服务器的wsrep.cnf
+
+
+
+
+01.[root@pxcnode71 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld_safe.cnf
+02.wsrep_cluster_address=gcomm://192.168.4.71,192.168.4.72,192.168.4.73//成员列表
+03.wsrep_node_address=192.168.4.71 //本机ip
+04.wsrep_cluster_name=pxc-cluster //集群名
+05.wsrep_node_name=pxcnode71 //本机主机名
+06.wsrep_sst_auth="sstuser:123qqq...A" //SST数据同步授权用户及密码
+07.:wq
+
+
+
+修改服务器192.168.4.72
+
+
+
+
+01.[root@pxcnode72 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld_safe.cnf
+02.wsrep_cluster_address=gcomm://192.168.4.71,192.168.4.72,192.168.4.73//成员列表
+03.wsrep_node_address=192.168.4.72 //本机ip
+04.wsrep_cluster_name=pxc-cluster //集群名
+05.wsrep_node_name=pxcnode72 //本机主机名
+06.wsrep_sst_auth="sstuser:123qqq...A" //SST数据同步授权用户及密码
+07.:wq
+
+
+
+修改服务器192.168.4.73
+
+
+
+
+01.[root@pxcnode73 ~]# vim /etc/percona-xtradb-cluster.conf.d/mysqld_safe.cnf
+02.wsrep_cluster_address=gcomm://192.168.4.71,192.168.4.72,192.168.4.73//成员列表
+03.wsrep_node_address=192.168.4.73 //本机ip
+04.wsrep_cluster_name=pxc-cluster //集群名
+05.wsrep_node_name=pxcnode73 //本机主机名
+06.wsrep_sst_auth="sstuser:123qqq...A" //SST数据同步授权用户及密码
+07.:wq
+
+
+
+步骤四：启动服务
+
+1）启动集群服务
+
+注意：在1台服务器上执行即可(192.168.4.71)，首次启动服务时间比较长
+
+
+
+
+01.[root@pxcnode71 ~]# ]# systemctl  start mysql@bootstrap.service  //启动集群服务
+02.[root@pxcnode71 ~]# grep pass /var/log/mysqld.log     //查看数据库管理员初始登录密码
+03.2019-06-20T12:29:42.489377Z 1 [Note] A temporary password is generated for root@localhost: W.HiOb8(ok)_
+04.
+05.[root@pxcnode71 ~]#mysql –uroot –p’ W.HiOb8(ok)_’ //使用初始密码登录
+06.Mysql> alter user  root@”localhost” identified by “123456”;//修改登录密码
+07.MySQL> exit;
+08.[root@pxcnode71 ~]#mysql –uroot –p123456 //使用修改后的密码登录
+09.Mysql> garnt reload, lock tables,replication client,process on *.*  to
+10.sstuser@"localhost” identified by  “123qqq…A”; //添加授权用户
+
+
+
+2）启动数据库服务
+
+启动主机pxcnode72的数据库服务，会自动同步pxcnode71主机的root初始密码和授权用户sstuser
+
+
+
+
+01.[root@pxcnode72 ~]# systemctl  start mysql  //启动数据库服务
+02.[root@pxcnode72 ~]#
+03.[root@pxcnode72 ~]# netstat -utnlp  | grep :3306
+04.tcp6       0      0 :::3306                 :::*                    LISTEN      12794/mysqld        
+05.[root@pxcnode72 ~]# netstat -utnlp  | grep :4567
+06.tcp        0      0 0.0.0.0:4567            0.0.0.0:*               LISTEN      12794/mysqld        
+07.[root@host72 ~]#
+
+
+
+启动主机pxcnode73的数据库服务，会自动同步pxcnode71主机的root初始密码和授权用户sstuser
+
+
+
+
+01.[root@pxcnode73 ~]# systemctl  start mysql  //启动数据库服务
+02.[root@pxcnode73 ~]#
+03.[root@pxcnode73 ~]# netstat -utnlp  | grep :3306
+04.tcp6       0      0 :::3306                 :::*                    LISTEN      12794/mysqld        
+05.[root@pxcnode73 ~]# netstat -utnlp  | grep :4567
+06.tcp        0      0 0.0.0.0:4567            0.0.0.0:*               LISTEN      12794/mysqld        
+07.[root@host73 ~]#
+
+
+ 
+3 案例3：测试配置
+
+3.1 问题
+•查看集群信息 
+•访问集群，存取数据 
+•测试故障自动恢复 
+1. 
+
+3.2 步骤
+
+实现此案例需要按照如下步骤进行。
+
+步骤一：查看集群信息
+
+1）启动数据库服务
+
+在任意一台数据查看都可以。
+
+
+
+
+01.[root@pxcnode71 ~]# mysql -uroot -p123456
+02.wsrep_incoming_addresses 192.168.4.71:3306,192.168.4.72:3306,192.168.4.73:3306 //集群成员列表 
+03.wsrep_cluster_size       3 //集群服务器台数
+04.wsrep_cluster_status   Primary     //集群状态                           
+05.wsrep_connected        ON            //连接状态
+06.wsrep_ready             ON           //服务状态
+
+
+
+步骤二：访问集群，存取数据
+
+1）添加访问数据的连接用户 （在任意一台服务器上添加都可以，另外的2台服务器会自动同步授权用户）
+
+
+
+
+01.[root@pxcnode72 ~]# mysql  -uroot  -p123456
+02.mysql> grant all on  gamedb.*  to yaya@"%" identified by "123456"; //添加授权用户
+03.Query OK, 0 rows affected, 1 warning (0.18 sec)
+04.
+05.[root@pxcnode71 ~]# mysql -uroot -p123456 -e  'show grants for yaya@"%" ' //查看
+06.mysql: [Warning] Using a password on the command line interface can be insecure.
+07.+--------------------------------------------------+
+08.| Grants for yaya@%                                |
+09.+--------------------------------------------------+
+10.| GRANT USAGE ON *.* TO 'yaya'@'%'                 |
+11.| GRANT ALL PRIVILEGES ON `gamedb`.* TO 'yaya'@'%' |
+12.+--------------------------------------------------+
+13.[root@pxcnode71 ~]#
+14.
+15.[root@pxcnode73 ~]# mysql -uroot -p123456 -e  'show grants for yaya@"%" ' //查看
+16.mysql: [Warning] Using a password on the command line interface can be insecure.
+17.+--------------------------------------------------+
+18.| Grants for yaya@%                                |
+19.+--------------------------------------------------+
+20.| GRANT USAGE ON *.* TO 'yaya'@'%'                 |
+21.| GRANT ALL PRIVILEGES ON `gamedb`.* TO 'yaya'@'%' |
+22.+--------------------------------------------------+
+23.[root@pxcnode73 ~]#
+
+
+
+2）客户端连接集群存取数据 （连接任意一台数据库服务器的ip地址都可以）
+
+连接数据服务器主机73
+
+
+
+
+01.client50 ~]# mysql -h192.168.4.73 -uyaya -p123456 //连接服务器73
+02.mysql>
+03.mysql> create database gamedb; //建库
+04.Query OK, 1 row affected (0.19 sec)
+05.
+06.mysql>  create table  gamedb.a(id int primary key auto_increment,name char(10));//建表
+07.Query OK, 0 rows affected (1.02 sec)
+08.
+09.mysql> insert into gamedb.a(name)values("bob"),("tom"); //插入记录
+10.Query OK, 2 rows affected (0.20 sec)
+11.Records: 2  Duplicates: 0  Warnings: 0
+
+
+
+3）在另外2台数据库服务器查看数据，客户端连接数据库服务器71主机查看数据。
+
+
+
+
+01.client50 ~]# mysql -h192.168.4.71 -uyaya -p123456 //连接服务器71
+02.mysql> select  * from  gamedb.a; //查看记录
+03.+----+-------+
+04.| id | name  |
+05.+----+-------+
+06.|  2 | bob   |
+07.|  5 | tom   |
+
+
+
+4）客户端连接数据库服务器73主机查看数据
+
+
+
+
+01.client50 ~]# mysql -h192.168.4.73 -uyaya -p123456 //连接服务器73
+02.mysql> select  * from  gamedb.a; //查看记录
+03.+----+-------+
+04.| id | name  |
+05.+----+-------+
+06.|  2 | bob   |
+07.|  5 | tom   |
+
+
+
+步骤三：测试故障自动恢复
+
+1）停止数据库服务
+
+停止3台服务器的任意一台主机的数据库服务都不会影响数据的存取。
+
+
+
+
+01.[root@pxcnode71 ~]# systemctl  stop  mysql  //停止71主机的数据库服务
+02.
+03.
+04.Client50 ~]# client50 ~]# mysql -h192.168.4.72 -uyaya -p123456 //连接服务器72
+05.mysql> insert into gamedb.a(name)values("bob2"),("tom2");
+06.mysql> insert into gamedb.a(name)values("jerry"),("jack");
+07.Query OK, 2 rows affected (0.20 sec)
+08.Records: 2  Duplicates: 0  Warnings: 0 
+
+
+
+客户端50，连接数据库主机73，查看数据
+
+
+
+
+01.client50 ~]# mysql -h192.168.4.73 -uyaya -p123456 //连接服务器73
+02.mysql> select  * from  gamedb.a;
+03.+----+-------+
+04.| id | name  |
+05.+----+-------+
+06.|  2 | bob   |
+07.|  5 | tom   |
+08.|  7 | bob2  |
+09.|  9 | tom2  |
+10.| 11 | jerry |
+11.| 13 | jack  |
+12.+----+-------+
+13.6 rows in set (0.00 sec)
+
+
+
+3）启动71主机的数据库服务
+
+数据库服务运行后，会自动同步宕机期间的数据。
+
+
+
+
+01.client50 ~]# mysql -h192.168.4.71 -uyaya -p123456 //连接服务器71
+02.mysql> select  * from  gamedb.a;
+03.+----+-------+
+04.| id | name  |
+05.+----+-------+
+06.|  2 | bob   |
+07.|  5 | tom   |
+08.|  7 | bob2  |
+09.|  9 | tom2  |
+10.| 11 | jerry |
+11.| 13 | jack  |
+12.+----+-------+
+13.rows in set (0.00 sec)
+
+ 

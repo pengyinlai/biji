@@ -1,0 +1,504 @@
+shell 脚本练习
+
+#！/bin/bash
+# 编写hello world脚本
+echo “htllo world”
+
+#!/bin/bash
+#通过位置变量创建linux系统账户及 密码
+useradd $1 
+echo $2 | passwd --stdin $1
+
+#!/bin/bash
+# 每周5使用tar命令备份/var/log下的所有日志文件
+tar -zcf /root/var_log_`date +%Y%m%d`.tar.gz /var/log
+
+周期任务
+#crontab -e 
+* * * * 5   /root/logbak.sh
+
+一键部署lnmp(rpm)包版本
+#！/bin/bash
+yum -y install gcc make 
+yum -y install pcre-devel openssl-devel 
+yum -y instlal mariadb-devel mariadb mariadb-server
+yum -y install php php-fpm php-mysql
+
+tar -zxf  /root/nginx.12.tar.gz 
+cd /root/nginx.12
+./configrou 
+$? eq  0 || echo "缺少依赖包" exit 1
+make && make install
+echo "/usr/local/nginx/sbin/nginx >> /etc/rc.loacl"
+chmod +x /etc/rc.loacl
+/usr/local/nginx/sbin/nginx
+cd ~/
+
+5 实时监控本机内存和硬盘剩余空间 剩余内存小于500M  根分区剩余空间小于1000M时 发送报警邮件给root管理员
+#！/bin/bash
+disk_size=$(df / | awk '/\//{print $4}')
+mem_size=$(free |awk ‘/Men/{print $4}’)
+while:
+do
+if [ $disk_size -le 512000 && $mem_size -le 1024000 ];
+then
+mil -s Warning root  << EOF 
+Insufficientresources，资源不足
+EOF
+fi
+done
+
+6.脚本生成一个100以内的随机数 提示用户猜数字 根据用户的输入 提示用户猜对了 猜小了 猜大了 直至用户猜对脚本结束
+x=$[RANDOM%101]
+while ;
+do
+	read -p '计算机生成了一个100以内的随机数，你猜：' cai
+	if [$cai -eq $x ] ; then
+	echo ‘恭喜你猜对了’
+	exit
+	elif [$cai -gt $x ];then
+	echo ‘你猜大了’
+	else
+	echo  ‘你猜小了’
+	fi
+
+done
+
+7.检测本机当前用户是否为超级管理员 如果是管理员 则使用yum 安装vsftpd 如果不是 则提示您非管理员
+#！/bin/bash
+if [$USER == 'root' ]; then
+		yum -y install  vsftpd
+else
+		echo "您不是管理员 没有权限安装软件"
+fi
+
+8.检测本机当前用户是否为超级管理员 如果是管理员 则使用不是 则提示您非管理员（使用UID）
+#!/bin/bash
+if [ $UID -eq 0 ];then 
+		yum -y install vsftpd
+else
+	echo ‘您不是超级管理员’
+fi
+
+9.编写脚本 提示用户输入用户名和密码 脚本自动创建响应的账户及配置密码 如果用户不输入账户名 则提示必须输入账户名 并退出脚本 如果用户不输入密码 则统一使用默认的123456 默认密码
+#！/bin/bash
+read -p '请输入用户名' user
+if [ -z $user ]；then 
+	echo ‘您必须输入账户名’
+fi
+stty -echo 
+read  -p  '请您输入密码' passwd
+stty echo 
+passwd={passwd:-123456}
+useradd $user 
+echo $passwd | passwd --stdin $user
+
+10.依次提示用户输入3个整数 脚本根据数字大小依次排序输出三个数字
+#！/bin/bash
+read -p "请用户输入一个整数" num1
+read -p "请用户输入一个整数" num2
+read -p "请用户输入一个整数" num3
+if [ $numl -gt $num2 ];then
+	tmp=$num1 
+	num1=$num2
+	num2=$tmp
+fi 
+if [ $num1 -gt $num3 ];then
+	tmp=$num1
+	num1=$num3
+	num3=$tmp
+fi
+if [ $num2 -gt $num3 ];then
+	tmp=$num2
+	num2=$num3
+	num3=$tmp
+fi 
+		echo '最后排序为：$num3>$num2>$num1'
+		
+11.编写脚本 实现人机<石头 剪刀 布>游戏
+#！/bin/bash
+game=(石头 剪刀 布)
+num1=$[RENDOM%3]
+com=${game[$num1]}
+echo '请根据提示选择您的出拳的手势'
+echo '1.石头'
+echo '2.剪刀'
+echo '3.布'
+
+read -p “请选择您1-3：” num2
+case $com in num2
+1) 
+	if [ $num1 -eq  0 ]; then
+		echo “平局”
+	elif [ $num1 -eq  1 ];then
+		echo ’您赢了‘
+	else 
+		echo “计算机赢了”
+	fi;;
+2)
+	if [ $num1 -eq 0 ]; then
+		echo '计算机赢了'
+	elif [ $num1 -eq 1 ];then
+		echo "平局"
+	else
+		echo ’你赢‘
+	fi；；
+
+3）
+	if [ $num1 -eq 0 ];then
+		echo ’你赢了‘
+	elif [ $num1 -eq 1 ];then
+		echo ’计算机赢了‘
+	else
+		echo ’平局‘
+	fi；；
+*） 
+		echo '必须输入1-3的数字'
+esac
+
+13.编写脚本测试192.168.4.0/24 整个网段中那些主机处于开机状体 那些主机处于 关机状态
+#！/bin/bash
+num1=0
+num2=0
+for i in {1..254}
+do
+		ping -c 2 -i 0.3 -w 1 192.168.4.$i
+		if [ $? -eq 0 ]；then 
+			let num1+=1
+			echo "192.168.4.$i 开机: $num1"
+			
+		else 
+			let num2+=1
+			echo “192.168.4.$i 关机机：$num2“
+			
+		fi 
+done 
+echo 
+
+13.编写脚本测试 192.168.4.0/24 整个网段中那些主机处于开机状态（while）
+#!/bin/bash
+i=1
+while [ $i -le 254 ]
+do
+		ping -c 2 -i 0.3 -W 1 192.168.4.$i
+		if [ $？ -eq 0 ]; then
+			echo ’192.168.4.$i 通了’
+		else
+			echo ‘192.168.4.$i 不通’
+			
+		fi
+		let i++
+				
+done
+
+14.编写脚本测试 192.168.4.0/24 整个网段中那些主机处于开机状态（多进程）
+#！/bin/bash
+myping() {
+	ping -c 2 -i 0.3 -w 1  $1 &> /dev/null
+		if [ $？ -eq 0 ]; then
+			echo ’$1 通了’
+		else
+			echo ‘$1 不通’
+			
+		fi	
+}
+	for i in {1..254}
+	do 
+		myping  192.168.4.$i  &
+	done 
+	
+15.编写脚本 显示进度条
+#！/bin/bash
+jindu() {
+	while ：
+	do
+		echo -n '#'
+		sleep 0.2
+	done
+}
+	jindu &
+	cp -a $1 $2 
+	killall $$
+	echo ‘拷贝完成’
+16 进度条 动态时针版本 | / — \
+#!/bin/bash
+rotate_line() {
+INTERVAL=0.1		#自定义变量值为0.1
+COUNT="0"			#自定义变量值为0
+while : 
+do
+COUNT=`expr $COUNT + 1`
+case $COUNT in
+"1")
+        echo -e '-'"\b\c"
+        sleep $INTERVAL
+        ;;
+"2")
+        echo -e '\\'"\b\c"
+        sleep $INTERVAL
+        ;;
+"3")
+        echo -e "|\b\c"
+        sleep $INTERVAL
+        ;;
+"4")
+        echo -e "/\b\c"
+        sleep $INTERVAL
+        ;;
+*)
+        COUNT="0" ;;
+esac
+done
+}
+rotate_line
+
+17.9*9 乘法表	
+	#!/bin/bash
+for i in {1..9}
+do
+        for j in {1..9}
+        do
+                echo -n "$i*$j=$[i*j]"  
+        done
+        echo ""
+done
+	
+18.使用死循环显示echo0网卡发送的数据流量包	（本地网卡ens33 流量信息如下）
+#！/bin/bash
+
+while : 
+do
+		echo 本地网卡信息流量如下
+		ifconfig ens33 | grep ‘RX packets’ | awk '{print $5}'
+		ifconfig ens33 | grep ‘TX packets’ | awk '{print $5}'
+		sleep 1
+done
+
+19.批量替换文件名
+
+#!/bin/bash
+for i in `ls *.$1`				#调出文件名
+do
+        mv $i  ${i%.*}.$2		#从右向左，匹配.删除
+
+done 
+
+子串截取的用法：
+•${变量名:起始位置:长度} 
+
+子串替换的两种用法：
+•只替换第一个匹配结果：${变量名/old/new} 
+•替换全部匹配结果：${变量名//old/new} 
+
+字符串掐头去尾：
+•从左向右，最短匹配删除：${变量名#*关键词} 
+•从左向右，最长匹配删除：${变量名##*关键词} 
+•从右向左，最短匹配删除：${变量名%关键词*} 
+•从右向左，最长匹配删除：${变量名%%关键词*} 
+
+认识字符串初值的最常见处理方法
+只取值，${var:-word}
+
+
+linux expect详解 
+
+20.使用expect工具自动交互密码远程使其他主机安装httpd 软件
+#!/bin/bash
+rm -rf ~/.ssh/known_hosts
+expect  <<EOF
+spawn  ssh 192.168.4.50
+expect "yes/no"  {send "yes\r"}
+expect "passwrod" {send "a\r"}
+expect "#" {send "yum -y install httpd\r"}
+expect "#" {send "exit\r"}
+EOF
+
+expect是一个自动化交互套件，主要应用于执行命令和程序时，系统以交互形式要求输入指定字符串，实现交互通信。
+expect自动交互流程：
+
+spawn启动指定进程---expect获取指定关键字---send向指定程序发送指定字符---执行完成退出.
+expect常用命令总结:
+复制代码
+spawn               交互程序开始后面跟命令或者指定程序
+expect              获取匹配信息匹配成功则执行expect后面的程序动作
+send exp_send       用于发送指定的字符串信息
+exp_continue        在expect中多次匹配就需要用到
+send_user           用来打印输出 相当于shell中的echo
+exit                退出expect脚本
+eof                 expect执行结束 退出
+set                 定义变量
+puts                输出变量
+set timeout         设置超时时间
+interact 　　　　　　 允许用户交互
+
+==========================================
+break可以结束整个循环；continue结束本次循环，进入下一次循环；exit结束整个脚本
+==========================================
+echo输出时的转义字符 
+-n : 表示输出之后不换行。
+-e : 表示对于转义字符按对应的方式进行处理
+\b 表示删除前面的空格 
+\n 表示换行 
+\t 表示水平制表符 
+\v 表示垂直制表符 
+\c \c后面的字符将不会输出，同一时候，输出完毕后也不会换行 
+\r 输出回车符（可是你会发现\r前面的字符没有了） 
+\a 表示输出一个警告声音
+
+
+
+
+
+23.编写脚本快速克隆kvm虚拟机
+#！/bin/bash
+#脚本针对RHEL7.2（centos7.2）
+#本脚本需要提前准备一个qcow2格式的虚拟机模板 名称为/var/lib/libvirt/images /.rh7_template的虚拟机模板
+#该脚本使用qemu-img命令快速创建快照虚拟机‘
+#脚本使用sed 修改模板虚拟机配置文件，将虚拟机名称 UUID	磁盘文件名 MAC地址
+	
+IMG_DIR=/var/lib/libvire/images
+BASEVM=rh7_template
+read -p "Enter vm number:" VMNUM
+	if [ $VMNUM -le 9 ]; then
+	VMNUM=0$VMNUM
+	fi 
+	if [ -z "${VMNUM}"]; then	#-z 检查变量的值是否未设置（空值）
+		echo "你必须输入数字. "
+		exit 66						#
+	elif [ $[VMNUM] -lt 1 -0 ${VMNUM} -gt 99 ]； then	
+	#-a 逻辑与And  -o 逻辑或Or
+		echo "输入超出范围"
+		exit 67
+	fi
+	
+	NEWVM=rh7_node${VMNUM}
+	
+	if [ -e $IMG_DIR${VMNUM}.img ]; then
+		echo “文件存在”
+		exit 68
+	fi
+		echo -en "创建虚拟机磁盘映像 \t"
+		qemu-img create -f qcow2 -b $IMG_DIR${BASEVM}.img $IMG_DIR${NEWVM}.img &> /dev/null
+	
+		echo -e "\e[32;1m[ok]\e]\e[0m"
+	cat /var/lib/libvire/images/.rh7.xml > /tmp/myvm.xml
+	sed -i “/<name>${BASEVM}/s/${BASEVM}/${NEWVM}/” /tmp/myvm.xml
+	
+24.编写一个点名器脚本
+# 该脚本 需要提前了准备一个user.txt文件
+# 该文件中需要包含所有姓名信息 一行一个姓名 脚本每次随机显示一个姓名
+#!/bin/bash
+line=`cat user.txt | wc -l`
+i=0
+while :
+do
+        num=$[RANDOM%line]
+        num=$[num+1]
+        sed -n "${num}p"  user.txt
+        sleep 0.2
+        let     i++
+        [ ${i} -le ${line} ] || exit
+done
+
+遍历数组：	
+# sort可以按数字大小排序 最后使用uniq 将重复的删除 并统计重复的次数
+netstat -atn | awk '{ip[$5]++} END{for(i in ip) {print ip[i],i}}' | sort -nr
+| uniq -c 
+	
+	
+	
+	
+	
+	
+	
+	
+	
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+
+ 

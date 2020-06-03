@@ -1,0 +1,13 @@
+can't read "viewmainheadid_orig(0)": no such variable
+can't read "viewmainheadid_orig(0)": no such variable
+    while executing
+"if {$mainheadid ne $viewmainheadid_orig($view)} {
+	if {$showlocalchanges} {
+	    dohidelocalchanges
+	}
+	set viewmainheadid($view) $mainheadid
+	set vie..."
+    (procedure "updatecommits" line 13)
+    invoked from within
+"updatecommits"
+    (menu invoke)

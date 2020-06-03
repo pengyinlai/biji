@@ -1,0 +1,8 @@
+安装PhpMyAdmin基本思路是什么？
+
+1. 安装 httpd 、 mysql 、 php-mysql 及相关包
+2. 启动 httpd 服务程序
+3. 解压 phpMyAdmin 包，部署到网站目录
+4. 配置 config.inc.php ，指定 MySQL 主机地址
+5. 创建授权用户
+6. 浏览器访问、登录使用
