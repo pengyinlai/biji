@@ -1,66 +1,64 @@
 [maxscale]
-threads=auto					//定义线程数可以用数字auto(自动)
+03.threads=auto            //运行的线程的数量
+04.
+05.[server1]            //定义数据库服务器
+06.type=server
+07.address=192.168.4.51        //主服务器ip
+08.port=3306
+09.protocol=MySQLBackend        
+10.
+11.[server2]
+12.type=server
+13.address=192.168.4.52        //从服务器IP
+14.port=3306
+15.protocol=MySQLBackend
+16.
+17.
+18.[MySQL Monitor]                //定义监控的数据库服务器
+19.type=monitor
+20.module=mysqlmon
+21.servers=server1, server2        //监控的数据库列表，不能写ip
+22.user=maxscalemon                    //监控用户
+23.passwd=123qqq...A                //密码
+24.monitor_interval=10000        
+25.
+26.
+27.
+28.#[Read-Only Service]        //不定义只读服务
+29.#type=service
+30.#router=readconnroute
+31.#servers=server1
+32.#user=myuser
+33.#passwd=mypwd
+34.#router_options=slave
+35.
+36.[Read-Write Service]            //定义读写分离服务
+37.type=service
+38.router=readwritesplit
+39.servers=server1, server2
+40.user=maxscalerouter            //路由用户
+41.passwd=123qqq…A                //密码
+42.max_slave_connections=100%
+43.
+44.[MaxAdmin Service]        //定义管理服务
+45.type=service
+46.router=cli
+47.
+48.#[Read-Only Listener]        //不定义只读服务使用的端口号
+#type=listener
+#service=Read-Only Service
+#protocol=MySQLClient
+#port=4008
 
-
-
-
-
-[server1]					//定义数据库服务器
-type=server					
-address=192.168.4.51		//master主机IP地址
-port=3306
-protocol=MySQLBackend
-
-
-[server2]					//定义数据库服务器
-type=server	
-address=192.168.4.52		//slave主机IP地址
-port=3306
-protocol=MySQLBackend
-
-
-
-[MySQL Monitor]				//定义监视的数据库节点
-type=monitor	
-module=mysqlmon
-servers=server1,server2		//主 从数据库的主机名
-user=plja					//监视用户
-passwd=123qqq...A			//密码
-monitor_interval=10000
-
- 
-
-
-[Read-Write Service]		//定义读写分离的数据库节点
-type=service
-router=readwritesplit
-servers=server1,server2		//主 从数据库的主机名
-user=pljb					//路由用户
-passwd=123qqq...A			//密码
-max_slave_connections=100%
-
-
-
-
-[MaxAdmin Service]			//定义管理服务器
-type=service
-router=cli
-
-
-
-
-[Read-Write Listener]		//定义读写分离服务端口好
+[Read-Write Listener]            //定义读写服务使用的端口号
 type=listener
 service=Read-Write Service
 protocol=MySQLClient
-port=4006					
+port=4006
 
-
-
-[MaxAdmin Listener]			//定义管理服务使用端口
+[MaxAdmin Listener]        //管理服务使用的端口号
 type=listener
 service=MaxAdmin Service
 protocol=maxscaled
 socket=default
-port=4016
-
+port=4016     # 手动添加，不指定时使用的是默认端口在启动服务以后可以知道默认端口是多少
